@@ -10,6 +10,9 @@ struct OnboardingView: View {
             // Background
             Color.theme.background
                 .ignoresSafeArea()
+                .onTapGesture {
+                    dismissKeyboard()
+                }
 
             // Ambient glow effects
             backgroundEffects
@@ -41,40 +44,33 @@ struct OnboardingView: View {
                 .animation(.spring(response: 0.5, dampingFraction: 0.8), value: viewModel.currentStep)
             }
         }
+        .onChange(of: viewModel.currentStep) { _, _ in
+            dismissKeyboard()
+        }
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     // MARK: - Background Effects
 
     private var backgroundEffects: some View {
+        // Simplified - use lower blur and drawingGroup for performance
         ZStack {
-            // Top-right glow
             Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color.theme.neonGreen.opacity(0.15), .clear],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 200
-                    )
-                )
-                .frame(width: 400, height: 400)
+                .fill(Color.theme.neonGreen.opacity(0.08))
+                .frame(width: 300, height: 300)
                 .offset(x: 150, y: -200)
-                .blur(radius: 60)
+                .blur(radius: 40)
 
-            // Bottom-left glow
             Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color.theme.neonPurple.opacity(0.1), .clear],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: 200
-                    )
-                )
-                .frame(width: 400, height: 400)
+                .fill(Color.theme.neonPurple.opacity(0.05))
+                .frame(width: 300, height: 300)
                 .offset(x: -150, y: 300)
-                .blur(radius: 60)
+                .blur(radius: 40)
         }
+        .drawingGroup()
     }
 
     // MARK: - Progress Indicator
@@ -213,38 +209,39 @@ struct HostDiscoveryStep: View {
     @FocusState private var isHostFieldFocused: Bool
 
     var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
+        VStack(spacing: 0) {
+            // Scrollable content
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header - compact
+                    VStack(spacing: 8) {
+                        Text("Find Your UniFi")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
 
-            // Header
-            VStack(spacing: 12) {
-                Text("Find Your UniFi")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                        Text("Scanning your network for UniFi controller")
+                            .font(.subheadline)
+                            .foregroundColor(Color.theme.textSecondary)
+                    }
+                    .padding(.top, 24)
 
-                Text("Scanning your network for UniFi controller")
-                    .font(.subheadline)
-                    .foregroundColor(Color.theme.textSecondary)
+                    // Scanning animation or result
+                    if viewModel.isLoading {
+                        RadarScanView()
+                            .frame(height: 180)
+                    } else if let host = viewModel.discoveredHost {
+                        discoveredHostCard(host: host)
+                    } else if isManualEntry {
+                        manualEntryCard
+                    } else {
+                        notFoundView
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 100)
             }
 
-            // Scanning animation or result
-            if viewModel.isLoading {
-                RadarScanView()
-                    .frame(height: 250)
-            } else if let host = viewModel.discoveredHost {
-                // Found!
-                discoveredHostCard(host: host)
-            } else if isManualEntry {
-                // Manual entry
-                manualEntryCard
-            } else {
-                // Not found - show options
-                notFoundView
-            }
-
-            Spacer()
-
-            // Navigation buttons
+            // Fixed bottom navigation
             HStack(spacing: 16) {
                 Button("Back") {
                     viewModel.previousStep()
@@ -253,45 +250,53 @@ struct HostDiscoveryStep: View {
 
                 if viewModel.discoveredHost != nil || (isManualEntry && !viewModel.host.isEmpty) {
                     Button("Continue") {
+                        isHostFieldFocused = false
                         viewModel.nextStep()
                     }
                     .buttonStyle(.neon(Color.theme.neonGreen))
                 }
             }
-
-            Spacer()
-                .frame(height: 40)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(Color.theme.background)
         }
-        .padding(.horizontal, 32)
         .onAppear {
             Task {
                 await viewModel.discoverUniFi()
             }
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    isHostFieldFocused = false
+                }
+                .foregroundColor(Color.theme.neonGreen)
+            }
+        }
     }
 
     private func discoveredHostCard(host: String) -> some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 50))
+                .font(.system(size: 40))
                 .foregroundColor(Color.theme.neonGreen)
-                .neonGlow(Color.theme.neonGreen, radius: 15)
 
             Text("Found UniFi Controller")
                 .font(.headline)
                 .foregroundColor(.white)
 
             Text(host)
-                .font(.system(.title2, design: .monospaced))
+                .font(.system(.title3, design: .monospaced))
                 .fontWeight(.bold)
                 .foregroundColor(Color.theme.neonGreen)
         }
-        .padding(32)
+        .padding(24)
         .glassCard()
     }
 
     private var manualEntryCard: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 16) {
             Text("Enter Controller IP")
                 .font(.headline)
                 .foregroundColor(.white)
@@ -307,14 +312,14 @@ struct HostDiscoveryStep: View {
                     .foregroundColor(Color.theme.neonRed)
             }
         }
-        .padding(24)
+        .padding(20)
         .glassCard()
     }
 
     private var notFoundView: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 16) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 40))
+                .font(.system(size: 32))
                 .foregroundColor(Color.theme.textSecondary)
 
             Text("No UniFi controller found")
@@ -335,7 +340,7 @@ struct HostDiscoveryStep: View {
             }
             .buttonStyle(.ghost(Color.theme.textSecondary))
         }
-        .padding(32)
+        .padding(24)
         .glassCard()
     }
 }
@@ -346,129 +351,212 @@ struct CredentialsStep: View {
     @ObservedObject var viewModel: SetupViewModel
     @FocusState private var focusedField: Field?
 
-    enum Field {
+    enum Field: Hashable {
         case username, password
     }
 
+    private var isFormValid: Bool {
+        !viewModel.username.isEmpty && !viewModel.password.isEmpty
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 32) {
-                Spacer()
-                    .frame(height: 40)
+        GeometryReader { geometry in
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Spacer to center content when keyboard is hidden
+                        Spacer(minLength: 20)
+                            .frame(maxHeight: geometry.size.height * 0.08)
 
-                // Header
-                VStack(spacing: 12) {
-                    Image(systemName: "person.badge.key.fill")
-                        .font(.system(size: 40))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.theme.neonPurple, Color.theme.neonBlue],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .neonGlow(Color.theme.neonPurple, radius: 10)
+                        // Compact header
+                        VStack(spacing: 12) {
+                            // Icon with subtle glow ring
+                            ZStack {
+                                Circle()
+                                    .stroke(Color.theme.neonPurple.opacity(0.2), lineWidth: 1)
+                                    .frame(width: 72, height: 72)
 
-                    Text("Local Admin Login")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                                Image(systemName: "person.badge.key.fill")
+                                    .font(.system(size: 28, weight: .medium))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [Color.theme.neonPurple, Color.theme.neonBlue],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            }
 
-                    Text("Enter your UniFi local admin credentials")
-                        .font(.subheadline)
-                        .foregroundColor(Color.theme.textSecondary)
-                        .multilineTextAlignment(.center)
-                }
+                            Text("Admin Login")
+                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
 
-                // Credentials input
-                VStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Username")
-                            .font(.caption)
-                            .foregroundColor(Color.theme.textSecondary)
-
-                        TextField("admin@example.com", text: $viewModel.username)
-                            .textFieldStyle(NeonTextFieldStyle())
-                            .textContentType(.username)
-                            .autocapitalization(.none)
-                            .autocorrectionDisabled()
-                            .focused($focusedField, equals: .username)
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Password")
-                            .font(.caption)
-                            .foregroundColor(Color.theme.textSecondary)
-
-                        SecureField("Password", text: $viewModel.password)
-                            .textFieldStyle(NeonTextFieldStyle())
-                            .textContentType(.password)
-                            .focused($focusedField, equals: .password)
-                    }
-
-                    if let error = viewModel.errorMessage {
-                        HStack {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                            Text(error)
+                            Text("UniFi local admin credentials")
+                                .font(.subheadline)
+                                .foregroundColor(Color.theme.textSecondary)
                         }
-                        .font(.caption)
-                        .foregroundColor(Color.theme.neonRed)
-                    }
-                }
-                .padding(24)
-                .glassCard()
+                        .padding(.bottom, 24)
 
-                // Info box
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundColor(Color.theme.neonBlue)
-                        Text("Local Account Required")
-                            .font(.subheadline.bold())
-                            .foregroundColor(.white)
-                    }
+                        // Login form card
+                        VStack(spacing: 0) {
+                            // Username field
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("USERNAME")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .tracking(1.5)
+                                    .foregroundColor(Color.theme.textTertiary)
 
-                    Text("Create a local admin account in UniFi Console (Settings → Admins → Add Admin → Local Access Only). Cloud/SSO accounts with 2FA cannot be used for API access.")
-                        .font(.caption)
-                        .foregroundColor(Color.theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(16)
-                .glassCard()
+                                TextField("", text: $viewModel.username, prompt: Text("admin@example.com").foregroundColor(Color.theme.textTertiary))
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.white)
+                                    .textContentType(.username)
+                                    .autocapitalization(.none)
+                                    .autocorrectionDisabled()
+                                    .keyboardType(.emailAddress)
+                                    .focused($focusedField, equals: .username)
+                                    .padding(.vertical, 14)
+                                    .padding(.horizontal, 16)
+                                    .background(Color.theme.background)
+                                    .cornerRadius(10)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(
+                                                focusedField == .username ? Color.theme.neonGreen.opacity(0.6) : Color.theme.glassStroke,
+                                                lineWidth: focusedField == .username ? 1.5 : 1
+                                            )
+                                    )
+                                    .id(Field.username)
+                            }
 
-                Spacer()
+                            Spacer().frame(height: 16)
 
-                // Navigation
-                HStack(spacing: 16) {
-                    Button("Back") {
-                        viewModel.previousStep()
-                    }
-                    .buttonStyle(.ghost(Color.theme.textSecondary))
+                            // Password field
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("PASSWORD")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .tracking(1.5)
+                                    .foregroundColor(Color.theme.textTertiary)
 
-                    Button {
-                        Task {
-                            if await viewModel.verifyCredentials() {
-                                viewModel.nextStep()
+                                SecureField("", text: $viewModel.password, prompt: Text("••••••••").foregroundColor(Color.theme.textTertiary))
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.white)
+                                    .textContentType(.password)
+                                    .focused($focusedField, equals: .password)
+                                    .padding(.vertical, 14)
+                                    .padding(.horizontal, 16)
+                                    .background(Color.theme.background)
+                                    .cornerRadius(10)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(
+                                                focusedField == .password ? Color.theme.neonGreen.opacity(0.6) : Color.theme.glassStroke,
+                                                lineWidth: focusedField == .password ? 1.5 : 1
+                                            )
+                                    )
+                                    .id(Field.password)
+                            }
+
+                            // Error message
+                            if let error = viewModel.errorMessage {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .font(.system(size: 12))
+                                    Text(error)
+                                        .font(.system(size: 12))
+                                }
+                                .foregroundColor(Color.theme.neonRed)
+                                .padding(.top, 12)
                             }
                         }
-                    } label: {
-                        if viewModel.isLoading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .black))
-                        } else {
-                            Text("Verify")
+                        .padding(20)
+                        .background(Color.theme.surface)
+                        .cornerRadius(16)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.theme.glassStroke, lineWidth: 1)
+                        )
+
+                        // Info hint - minimal
+                        HStack(spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 11))
+                            Text("Use a local admin account, not your Ubiquiti cloud login")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundColor(Color.theme.textTertiary)
+                        .padding(.top, 12)
+
+                        Spacer(minLength: 24)
+
+                        // Action buttons - inside scroll view
+                        VStack(spacing: 12) {
+                            // Primary action
+                            Button {
+                                focusedField = nil
+                                Task {
+                                    if await viewModel.verifyCredentials() {
+                                        viewModel.nextStep()
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if viewModel.isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .black))
+                                            .scaleEffect(0.8)
+                                    } else {
+                                        Text("Verify & Continue")
+                                        Image(systemName: "arrow.right")
+                                            .font(.system(size: 14, weight: .semibold))
+                                    }
+                                }
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(
+                                    Capsule()
+                                        .fill(isFormValid ? Color.theme.neonGreen : Color.theme.neonGreen.opacity(0.3))
+                                )
+                            }
+                            .disabled(!isFormValid || viewModel.isLoading)
+
+                            // Back button
+                            Button {
+                                focusedField = nil
+                                viewModel.previousStep()
+                            } label: {
+                                Text("Back")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(Color.theme.textSecondary)
+                            }
+                        }
+                        .padding(.bottom, 32)
+                        .id("buttons")
+                    }
+                    .padding(.horizontal, 24)
+                    .frame(minHeight: geometry.size.height)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: focusedField) { _, newValue in
+                    if let field = newValue {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            scrollProxy.scrollTo(field, anchor: .center)
                         }
                     }
-                    .buttonStyle(.neon(Color.theme.neonGreen))
-                    .disabled(viewModel.username.isEmpty || viewModel.password.isEmpty || viewModel.isLoading)
-                    .opacity((viewModel.username.isEmpty || viewModel.password.isEmpty) ? 0.5 : 1)
                 }
-
-                Spacer()
-                    .frame(height: 40)
             }
-            .padding(.horizontal, 32)
         }
-        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(Color.theme.neonGreen)
+            }
+        }
     }
 }
 
@@ -480,136 +568,139 @@ struct SiteIdStep: View {
     @State private var showManualEntry = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 32) {
-                Spacer()
-                    .frame(height: 40)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Header - compact
+                    VStack(spacing: 8) {
+                        Image(systemName: "building.2.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(Color.theme.neonPurple)
 
-                // Header
-                VStack(spacing: 12) {
-                    Image(systemName: "building.2.fill")
-                        .font(.system(size: 40))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.theme.neonPurple, Color.theme.neonBlue],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .neonGlow(Color.theme.neonPurple, radius: 10)
+                        Text("Select Site")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
 
-                    Text("Select Site")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-
-                    Text(viewModel.availableSites.isEmpty ? "Enter your UniFi Site ID" : "Choose your UniFi site")
-                        .font(.subheadline)
-                        .foregroundColor(Color.theme.textSecondary)
-                }
-
-                // Show discovered sites if available
-                if !viewModel.availableSites.isEmpty && !showManualEntry {
-                    VStack(spacing: 12) {
-                        ForEach(viewModel.availableSites) { site in
-                            Button {
-                                viewModel.selectSite(site)
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(site.desc ?? site.name)
-                                            .font(.headline)
-                                            .foregroundColor(.white)
-                                        Text(site.name)
-                                            .font(.caption)
-                                            .foregroundColor(Color.theme.textTertiary)
-                                            .lineLimit(1)
-                                    }
-                                    Spacer()
-                                    if viewModel.siteId == site.name {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(Color.theme.neonGreen)
-                                    }
-                                }
-                                .padding(16)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(viewModel.siteId == site.name ? Color.theme.neonGreen.opacity(0.1) : Color.theme.surface)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(viewModel.siteId == site.name ? Color.theme.neonGreen.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        Button("Enter manually instead") {
-                            withAnimation {
-                                showManualEntry = true
-                            }
-                        }
-                        .font(.caption)
-                        .foregroundColor(Color.theme.textSecondary)
-                        .padding(.top, 8)
+                        Text(viewModel.availableSites.isEmpty ? "Enter your UniFi Site ID" : "Choose your UniFi site")
+                            .font(.subheadline)
+                            .foregroundColor(Color.theme.textSecondary)
                     }
-                } else {
-                    // Manual entry
-                    VStack(spacing: 16) {
-                        TextField("default or UUID", text: $viewModel.siteId)
-                            .textFieldStyle(NeonTextFieldStyle())
-                            .autocapitalization(.none)
-                            .autocorrectionDisabled()
-                            .focused($isSiteIdFieldFocused)
+                    .padding(.top, 16)
 
-                        Text("Try 'default' first, or find the UUID in your UniFi Console URL")
-                            .font(.caption)
-                            .foregroundColor(Color.theme.textTertiary)
-                            .multilineTextAlignment(.center)
+                    // Show discovered sites if available
+                    if !viewModel.availableSites.isEmpty && !showManualEntry {
+                        VStack(spacing: 12) {
+                            ForEach(viewModel.availableSites) { site in
+                                Button {
+                                    viewModel.selectSite(site)
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(site.desc ?? site.name)
+                                                .font(.headline)
+                                                .foregroundColor(.white)
+                                            Text(site.name)
+                                                .font(.caption)
+                                                .foregroundColor(Color.theme.textTertiary)
+                                                .lineLimit(1)
+                                        }
+                                        Spacer()
+                                        if viewModel.siteId == site.name {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundColor(Color.theme.neonGreen)
+                                        }
+                                    }
+                                    .padding(16)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .fill(viewModel.siteId == site.name ? Color.theme.neonGreen.opacity(0.1) : Color.theme.surface)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(viewModel.siteId == site.name ? Color.theme.neonGreen.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
 
-                        if let error = viewModel.errorMessage {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundColor(Color.theme.neonRed)
-                        }
-
-                        if !viewModel.availableSites.isEmpty {
-                            Button("Show discovered sites") {
+                            Button("Enter manually instead") {
                                 withAnimation {
-                                    showManualEntry = false
+                                    showManualEntry = true
                                 }
                             }
                             .font(.caption)
-                            .foregroundColor(Color.theme.neonGreen)
+                            .foregroundColor(Color.theme.textSecondary)
+                            .padding(.top, 8)
                         }
-                    }
-                    .padding(24)
-                    .glassCard()
-                }
+                    } else {
+                        // Manual entry
+                        VStack(spacing: 16) {
+                            TextField("default or UUID", text: $viewModel.siteId)
+                                .textFieldStyle(NeonTextFieldStyle())
+                                .autocapitalization(.none)
+                                .autocorrectionDisabled()
+                                .focused($isSiteIdFieldFocused)
 
-                Spacer()
+                            Text("Try 'default' first, or find the UUID in your UniFi Console URL")
+                                .font(.caption)
+                                .foregroundColor(Color.theme.textTertiary)
+                                .multilineTextAlignment(.center)
 
-                // Navigation
-                HStack(spacing: 16) {
-                    Button("Back") {
-                        viewModel.previousStep()
-                    }
-                    .buttonStyle(.ghost(Color.theme.textSecondary))
+                            if let error = viewModel.errorMessage {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(Color.theme.neonRed)
+                            }
 
-                    Button("Continue") {
-                        viewModel.nextStep()
-                        Task {
-                            await viewModel.loadRules()
+                            if !viewModel.availableSites.isEmpty {
+                                Button("Show discovered sites") {
+                                    withAnimation {
+                                        showManualEntry = false
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundColor(Color.theme.neonGreen)
+                            }
                         }
+                        .padding(16)
+                        .glassCard()
                     }
-                    .buttonStyle(.neon(Color.theme.neonGreen))
-                    .disabled(viewModel.siteId.isEmpty)
-                    .opacity(viewModel.siteId.isEmpty ? 0.5 : 1)
                 }
-
-                Spacer()
-                    .frame(height: 40)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 100)
             }
-            .padding(.horizontal, 32)
+            .scrollDismissesKeyboard(.interactively)
+
+            // Fixed bottom navigation
+            HStack(spacing: 16) {
+                Button("Back") {
+                    viewModel.previousStep()
+                }
+                .buttonStyle(.ghost(Color.theme.textSecondary))
+
+                Button("Continue") {
+                    isSiteIdFieldFocused = false
+                    viewModel.nextStep()
+                    Task {
+                        await viewModel.loadRules()
+                    }
+                }
+                .buttonStyle(.neon(Color.theme.neonGreen))
+                .disabled(viewModel.siteId.isEmpty)
+                .opacity(viewModel.siteId.isEmpty ? 0.5 : 1)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(Color.theme.background)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    isSiteIdFieldFocused = false
+                }
+                .foregroundColor(Color.theme.neonGreen)
+            }
         }
     }
 }

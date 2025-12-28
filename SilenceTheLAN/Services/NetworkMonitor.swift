@@ -12,28 +12,40 @@ final class NetworkMonitor: ObservableObject {
     @Published private(set) var isConnected = true
     @Published private(set) var isWiFi = false
     @Published private(set) var isReachable = false
+    @Published private(set) var configuredHost: String?
 
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "NetworkMonitor")
 
-    private var unifiHost: String?
+    // Guard against concurrent reachability checks
+    private var isCheckingReachability = false
+    private var pendingReachabilityCheck = false
+
+    // Shared session for reachability checks
+    private lazy var reachabilitySession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 3
+        config.timeoutIntervalForResource = 3
+        return URLSession(
+            configuration: config,
+            delegate: SSLTrustDelegate(),
+            delegateQueue: nil
+        )
+    }()
 
     private init() {
         logger.info("NetworkMonitor initialized")
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
-                let wasConnected = self?.isConnected ?? false
                 self?.isConnected = path.status == .satisfied
                 self?.isWiFi = path.usesInterfaceType(.wifi)
 
-                logger.info("Network path update: status=\(path.status == .satisfied ? "connected" : "disconnected"), wifi=\(path.usesInterfaceType(.wifi)), host=\(self?.unifiHost ?? "nil")")
+                logger.info("Network path update: status=\(path.status == .satisfied ? "connected" : "disconnected"), wifi=\(path.usesInterfaceType(.wifi))")
 
-                // When network changes, check UniFi reachability
-                if path.status == .satisfied, let host = self?.unifiHost {
-                    logger.info("Network satisfied, checking reachability for host: \(host)")
-                    await self?.checkReachability(host: host)
+                // When network changes and we have a host, schedule a reachability check
+                if path.status == .satisfied, let host = self?.configuredHost {
+                    await self?.scheduleReachabilityCheck(host: host)
                 } else {
-                    logger.warning("Network not satisfied or host not configured. status=\(path.status == .satisfied), host=\(self?.unifiHost ?? "nil")")
                     self?.isReachable = false
                 }
             }
@@ -43,64 +55,88 @@ final class NetworkMonitor: ObservableObject {
 
     func configure(host: String) {
         logger.info("NetworkMonitor.configure called with host: \(host)")
-        self.unifiHost = host
+        self.configuredHost = host
+        // Assume reachable initially to avoid blocking UI, then verify in background
+        self.isReachable = true
         Task {
-            await checkReachability(host: host)
+            await scheduleReachabilityCheck(host: host)
         }
     }
 
-    /// Ensure reachability has been checked - call this before using isReachable
+    /// Ensure reachability has been checked - non-blocking
     func ensureReachabilityChecked() async {
-        guard let host = unifiHost else {
+        guard let host = configuredHost else {
             logger.warning("ensureReachabilityChecked: No host configured")
             return
         }
-        logger.info("ensureReachabilityChecked: Forcing reachability check for host: \(host)")
-        await checkReachability(host: host)
+        await scheduleReachabilityCheck(host: host)
     }
 
-    func checkReachability(host: String) async {
-        logger.info("checkReachability starting for host: \(host)")
-
-        guard let url = URL(string: "https://\(host)") else {
-            logger.error("checkReachability: Invalid URL for host: \(host)")
-            isReachable = false
+    /// Schedule a reachability check, debouncing concurrent requests
+    private func scheduleReachabilityCheck(host: String) async {
+        if isCheckingReachability {
+            // Already checking - mark that we need another check after
+            pendingReachabilityCheck = true
+            logger.info("scheduleReachabilityCheck: Already checking, will retry after")
             return
         }
 
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 5
-        config.timeoutIntervalForResource = 5
-
-        let session = URLSession(
-            configuration: config,
-            delegate: SSLTrustDelegate(),
-            delegateQueue: nil
-        )
-
-        do {
-            var request = URLRequest(url: url)
-            request.httpMethod = "HEAD"
-            logger.info("checkReachability: Making HEAD request to \(url.absoluteString)")
-
-            let (_, response) = try await session.data(for: request)
-
-            if let httpResponse = response as? HTTPURLResponse {
-                let statusCode = httpResponse.statusCode
-                let reachable = (200...499).contains(statusCode)
-                logger.info("checkReachability: Got response statusCode=\(statusCode), setting isReachable=\(reachable)")
-                isReachable = reachable
-            } else {
-                logger.warning("checkReachability: Response is not HTTPURLResponse")
-                isReachable = false
+        isCheckingReachability = true
+        defer {
+            isCheckingReachability = false
+            // If a check was requested while we were checking, do one more
+            if pendingReachabilityCheck {
+                pendingReachabilityCheck = false
+                Task {
+                    await scheduleReachabilityCheck(host: host)
+                }
             }
-        } catch {
-            logger.error("checkReachability: Error - \(error.localizedDescription)")
-            logger.error("checkReachability: Full error - \(String(describing: error))")
-            isReachable = false
         }
 
-        logger.info("checkReachability completed: isReachable=\(self.isReachable)")
+        await performReachabilityCheck(host: host)
+    }
+
+    /// Actually perform the reachability check
+    private func performReachabilityCheck(host: String) async {
+        logger.info("performReachabilityCheck starting for host: \(host)")
+
+        // Try endpoints in order of reliability for UDM Pro
+        let endpoints = [
+            "https://\(host)/proxy/network/api/s/default/self",  // Network app API - most reliable
+            "https://\(host)/",  // Root page
+            "https://\(host)/api/system/info"  // UniFi OS API - can be slow/timeout
+        ]
+
+        for endpoint in endpoints {
+            guard let url = URL(string: endpoint) else { continue }
+
+            do {
+                var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+                let (_, response) = try await reachabilitySession.data(for: request)
+
+                if let httpResponse = response as? HTTPURLResponse {
+                    let statusCode = httpResponse.statusCode
+                    // Any response (even 401/403) means the server is reachable
+                    let reachable = (200...599).contains(statusCode)
+                    if reachable {
+                        logger.info("performReachabilityCheck: \(endpoint) responded with \(statusCode), isReachable=true")
+                        isReachable = true
+                        return
+                    }
+                }
+            } catch {
+                // Try next endpoint
+                logger.info("performReachabilityCheck: \(endpoint) failed - \(error.localizedDescription)")
+                continue
+            }
+        }
+
+        // All endpoints failed
+        logger.warning("performReachabilityCheck: All endpoints failed, isReachable=false")
+        isReachable = false
     }
 }
 

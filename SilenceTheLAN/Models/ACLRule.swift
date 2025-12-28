@@ -45,6 +45,28 @@ final class ACLRule {
         return name
     }
 
+    /// Person name extracted from rule name (e.g., "Downtime-Rishi-Games" -> "Rishi")
+    var personName: String {
+        let display = displayName
+        // Split by hyphen or space to get the first part (person name)
+        let separators = CharacterSet(charactersIn: "- ")
+        let parts = display.components(separatedBy: separators)
+        return parts.first ?? display
+    }
+
+    /// Activity name extracted from rule name (e.g., "Downtime-Rishi-Games" -> "Games")
+    /// Returns "Internet" if no activity specified
+    var activityName: String {
+        let display = displayName
+        let separators = CharacterSet(charactersIn: "- ")
+        let parts = display.components(separatedBy: separators)
+        if parts.count > 1 {
+            // Join remaining parts as the activity (handles multi-word activities)
+            return parts.dropFirst().joined(separator: " ")
+        }
+        return "Internet"
+    }
+
     /// Whether manual override is active (schedule set to ALWAYS)
     var isOverrideActive: Bool {
         scheduleMode.uppercased() == "ALWAYS"
@@ -106,7 +128,18 @@ final class ACLRule {
 
     /// Check if current time is within the scheduled block window
     private func isWithinScheduledTime() -> Bool {
-        guard let startStr = scheduleStart, let endStr = scheduleEnd else {
+        return isTimeWithinSchedule(start: scheduleStart, end: scheduleEnd)
+    }
+
+    /// Check if current time is within the ORIGINAL schedule window
+    /// Use this when the rule is in ALWAYS mode but has preserved schedule times
+    var isWithinOriginalScheduleWindow: Bool {
+        return isTimeWithinSchedule(start: originalScheduleStart, end: originalScheduleEnd)
+    }
+
+    /// Helper to check if current time is within a given schedule
+    private func isTimeWithinSchedule(start: String?, end: String?) -> Bool {
+        guard let startStr = start, let endStr = end else {
             return false
         }
 

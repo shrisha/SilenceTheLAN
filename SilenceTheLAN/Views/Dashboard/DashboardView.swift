@@ -1,171 +1,195 @@
 import SwiftUI
 
+// MARK: - Rule Group Model
+
+struct RuleGroup: Identifiable {
+    let id: String  // Person name
+    let personName: String
+    let rules: [ACLRule]
+
+    var blockedCount: Int {
+        rules.filter { $0.isCurrentlyBlocking }.count
+    }
+
+    var isAnyBlocking: Bool {
+        rules.contains { $0.isCurrentlyBlocking }
+    }
+
+    var isAllBlocking: Bool {
+        rules.allSatisfy { $0.isCurrentlyBlocking }
+    }
+}
+
 struct DashboardView: View {
     @EnvironmentObject var appState: AppState
     @State private var showSettings = false
-    @State private var headerOpacity: Double = 0
-    @State private var cardsOffset: CGFloat = 50
+    @State private var expandedGroups: Set<String> = []
+
+    /// Group rules by person name
+    private var ruleGroups: [RuleGroup] {
+        let grouped = Dictionary(grouping: appState.rules) { $0.personName }
+        return grouped.map { personName, rules in
+            RuleGroup(id: personName, personName: personName, rules: rules.sorted { $0.activityName < $1.activityName })
+        }.sorted { $0.personName < $1.personName }
+    }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                // Background
-                Color.theme.background
-                    .ignoresSafeArea()
+        ZStack {
+            // Background
+            Color.theme.background
+                .ignoresSafeArea()
 
-                // Ambient background effects
-                backgroundEffects
+            // Ambient background effects
+            backgroundEffects
 
-                VStack(spacing: 0) {
-                    // Offline banner
-                    if !appState.networkMonitor.isReachable {
-                        offlineBanner
-                    }
+            VStack(spacing: 0) {
+                // Offline banner
+                if !appState.networkMonitor.isReachable {
+                    offlineBanner
+                }
 
-                    // Content
-                    ScrollView {
-                        LazyVStack(spacing: 16) {
-                            // Header
-                            headerView
-                                .padding(.top, 20)
-                                .opacity(headerOpacity)
+                // Content
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        // Header
+                        headerView
 
-                            // Error message
-                            if let error = appState.errorMessage {
-                                errorBanner(error)
-                            }
+                        // Error message
+                        if let error = appState.errorMessage {
+                            errorBanner(error)
+                        }
 
-                            // Rules
-                            if appState.rules.isEmpty && !appState.isLoading {
-                                emptyState
-                            } else {
-                                ForEach(appState.rules) { rule in
-                                    RuleCard(
-                                        rule: rule,
-                                        isToggling: appState.togglingRuleIds.contains(rule.ruleId),
-                                        onToggle: {
-                                            Task {
-                                                await appState.toggleRule(rule)
+                        // Grouped Rules
+                        if appState.rules.isEmpty && !appState.isLoading {
+                            emptyState
+                        } else {
+                            ForEach(ruleGroups) { group in
+                                PersonGroupCard(
+                                    group: group,
+                                    isExpanded: expandedGroups.contains(group.id),
+                                    togglingRuleIds: appState.togglingRuleIds,
+                                    onToggleExpand: {
+                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                            if expandedGroups.contains(group.id) {
+                                                expandedGroups.remove(group.id)
+                                            } else {
+                                                expandedGroups.insert(group.id)
                                             }
                                         }
-                                    )
-                                    .offset(y: cardsOffset)
-                                }
-                            }
-
-                            Spacer()
-                                .frame(height: 100)
-                        }
-                        .padding(.horizontal, 20)
-                    }
-                    .refreshable {
-                        await appState.refreshRules()
-                    }
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title3)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Color.theme.textSecondary, Color.theme.textTertiary],
-                                    startPoint: .top,
-                                    endPoint: .bottom
+                                    },
+                                    onToggleAll: { shouldBlock in
+                                        Task {
+                                            await appState.toggleAllRulesForPerson(group.rules, shouldBlock: shouldBlock)
+                                        }
+                                    },
+                                    onToggleRule: { rule in
+                                        Task {
+                                            await appState.toggleRule(rule)
+                                        }
+                                    }
                                 )
-                            )
+                            }
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 80)
+                }
+                .refreshable {
+                    await appState.refreshRules()
                 }
             }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-                    .environmentObject(appState)
-            }
+            .safeAreaPadding(.top)
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(appState)
         }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.6)) {
-                headerOpacity = 1
+            // Expand all groups by default
+            if expandedGroups.isEmpty {
+                expandedGroups = Set(ruleGroups.map { $0.id })
             }
-            withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.2)) {
-                cardsOffset = 0
-            }
-            Task {
-                await appState.refreshRules()
-            }
+        }
+        .task {
+            // Refresh rules on appear (with small delay to let UI render)
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+            await appState.refreshRules()
         }
     }
 
     // MARK: - Background Effects
 
     private var backgroundEffects: some View {
+        // Simplified static background - no per-rule iteration
         ZStack {
-            // Dynamic glow based on rule states
-            ForEach(Array(appState.rules.enumerated()), id: \.element.ruleId) { index, rule in
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                (rule.isEnabled ? Color.theme.neonGreen : Color.theme.neonRed).opacity(0.08),
-                                .clear
-                            ],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 150
-                        )
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [Color.theme.neonGreen.opacity(0.05), .clear],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 200
                     )
-                    .frame(width: 300, height: 300)
-                    .offset(
-                        x: index % 2 == 0 ? -100 : 100,
-                        y: CGFloat(index * 150) - 100
+                )
+                .frame(width: 400, height: 400)
+                .offset(x: -100, y: -50)
+                .blur(radius: 60)
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [Color.theme.neonRed.opacity(0.03), .clear],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 200
                     )
-                    .blur(radius: 80)
-            }
+                )
+                .frame(width: 400, height: 400)
+                .offset(x: 100, y: 300)
+                .blur(radius: 60)
         }
+        .drawingGroup() // Rasterize for better performance
     }
 
     // MARK: - Header
 
     private var headerView: some View {
         VStack(spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Network Control")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+            // Title row with settings
+            HStack(alignment: .center) {
+                Text("Rules")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
 
-                    Text("\(appState.rules.count) rules managed")
-                        .font(.subheadline)
-                        .foregroundColor(Color.theme.textSecondary)
+                Spacer()
+
+                // Quick stats inline
+                HStack(spacing: 10) {
+                    StatPill(
+                        icon: "wifi.slash",
+                        count: appState.rules.filter { $0.isCurrentlyBlocking }.count,
+                        label: "Blocked",
+                        color: Color.theme.neonRed
+                    )
+                    StatPill(
+                        icon: "checkmark.circle.fill",
+                        count: appState.rules.filter { !$0.isCurrentlyBlocking }.count,
+                        label: "Allowed",
+                        color: Color.theme.neonGreen
+                    )
                 }
-                Spacer()
-            }
 
-            // Quick stats - based on actual current blocking status
-            HStack(spacing: 16) {
-                StatPill(
-                    icon: "wifi.slash",
-                    count: appState.rules.filter { $0.isCurrentlyBlocking }.count,
-                    label: "Blocked",
-                    color: Color.theme.neonRed
-                )
-                StatPill(
-                    icon: "checkmark.circle.fill",
-                    count: appState.rules.filter { !$0.isCurrentlyBlocking }.count,
-                    label: "Allowed",
-                    color: Color.theme.neonGreen
-                )
-                Spacer()
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.title3)
+                        .foregroundColor(Color.theme.textSecondary)
+                        .padding(8)
+                }
             }
-            .padding(.top, 8)
         }
-        .padding(.bottom, 8)
     }
 
     // MARK: - Offline Banner
@@ -255,107 +279,209 @@ struct StatPill: View {
     }
 }
 
-// MARK: - Rule Card
+// MARK: - Person Group Card
 
-struct RuleCard: View {
+struct PersonGroupCard: View {
+    let group: RuleGroup
+    let isExpanded: Bool
+    let togglingRuleIds: Set<String>
+    let onToggleExpand: () -> Void
+    let onToggleAll: (Bool) -> Void
+    let onToggleRule: (ACLRule) -> Void
+
+    private var stateColor: Color {
+        group.isAnyBlocking ? Color.theme.neonRed : Color.theme.neonGreen
+    }
+
+    private var isAnyToggling: Bool {
+        group.rules.contains { togglingRuleIds.contains($0.ruleId) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header - Person name with master toggle
+            Button(action: onToggleExpand) {
+                HStack(spacing: 16) {
+                    // Expand/collapse indicator
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color.theme.textTertiary)
+                        .frame(width: 16)
+
+                    // Person avatar and name
+                    ZStack {
+                        Circle()
+                            .fill(stateColor.opacity(0.2))
+                            .frame(width: 44, height: 44)
+
+                        Text(String(group.personName.prefix(1)).uppercased())
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundColor(stateColor)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(group.personName)
+                            .font(.system(size: 18, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+
+                        HStack(spacing: 6) {
+                            Text("\(group.rules.count) rule\(group.rules.count == 1 ? "" : "s")")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color.theme.textSecondary)
+
+                            if group.blockedCount > 0 {
+                                Text("·")
+                                    .foregroundColor(Color.theme.textTertiary)
+                                Text("\(group.blockedCount) blocked")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(Color.theme.neonRed)
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    // Master toggle for all rules
+                    if isAnyToggling {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: stateColor))
+                            .scaleEffect(0.8)
+                    } else {
+                        Button {
+                            onToggleAll(!group.isAnyBlocking)
+                        } label: {
+                            Text(group.isAnyBlocking ? "Allow All" : "Block All")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(group.isAnyBlocking ? Color.theme.neonGreen : Color.theme.neonRed)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .fill((group.isAnyBlocking ? Color.theme.neonGreen : Color.theme.neonRed).opacity(0.15))
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke((group.isAnyBlocking ? Color.theme.neonGreen : Color.theme.neonRed).opacity(0.3), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(16)
+            }
+            .buttonStyle(.plain)
+
+            // Expanded content - individual activity rules
+            if isExpanded {
+                VStack(spacing: 8) {
+                    ForEach(group.rules) { rule in
+                        ActivityRuleRow(
+                            rule: rule,
+                            isToggling: togglingRuleIds.contains(rule.ruleId),
+                            onToggle: { onToggleRule(rule) }
+                        )
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.theme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(
+                    LinearGradient(
+                        colors: [stateColor.opacity(0.3), stateColor.opacity(0.1)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+    }
+}
+
+// MARK: - Activity Rule Row (Compact)
+
+struct ActivityRuleRow: View {
     @Bindable var rule: ACLRule
     let isToggling: Bool
     let onToggle: () -> Void
 
-    @State private var isPressed = false
-    @State private var glowIntensity: Double = 1.0
-
-    // Use the computed properties from ACLRule model
     private var stateColor: Color {
         rule.isCurrentlyBlocking ? Color.theme.neonRed : Color.theme.neonGreen
     }
 
-    private var statusText: String {
-        rule.isCurrentlyBlocking ? "BLOCKED" : "ALLOWED"
+    private var activityIcon: String {
+        switch rule.activityName.lowercased() {
+        case "internet": return "wifi"
+        case "games": return "gamecontroller.fill"
+        case "youtube": return "play.rectangle.fill"
+        case "social": return "bubble.left.and.bubble.right.fill"
+        case "streaming": return "tv.fill"
+        default: return "app.fill"
+        }
     }
 
     var body: some View {
         Button(action: onToggle) {
-            HStack(spacing: 20) {
-                // Status indicator with glow
-                Circle()
-                    .fill(stateColor)
-                    .frame(width: 12, height: 12)
-                    .neonGlow(stateColor, radius: 8 * glowIntensity, isActive: true)
-                    .pulse(isActive: rule.isCurrentlyBlocking)
+            HStack(spacing: 12) {
+                // Activity icon
+                Image(systemName: activityIcon)
+                    .font(.system(size: 14))
+                    .foregroundColor(stateColor)
+                    .frame(width: 24)
 
-                // Rule info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(rule.displayName)
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
+                // Activity name and status
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(rule.activityName)
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundColor(.white)
 
-                    // Status and schedule info
-                    HStack(spacing: 8) {
-                        Text(statusText)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .tracking(2)
-                            .foregroundColor(stateColor)
-
-                        if isToggling {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: stateColor))
-                                .scaleEffect(0.6)
-                        }
-                    }
-
-                    // Schedule summary
                     Text(rule.scheduleSummary)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 10))
                         .foregroundColor(Color.theme.textTertiary)
                 }
 
                 Spacer()
 
-                // Toggle switch - ON means traffic is currently blocked
-                CustomToggle(isOn: rule.isCurrentlyBlocking, color: Color.theme.neonRed)
+                // Status indicator
+                if isToggling {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: stateColor))
+                        .scaleEffect(0.6)
+                } else {
+                    // Compact toggle
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(stateColor)
+                            .frame(width: 8, height: 8)
+
+                        Text(rule.isCurrentlyBlocking ? "BLOCKED" : "ALLOWED")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(stateColor)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(stateColor.opacity(0.15))
+                    .cornerRadius(12)
+                }
             }
-            .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.theme.surface)
-            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color.theme.background.opacity(0.5))
+            .cornerRadius(12)
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(
-                        LinearGradient(
-                            colors: [stateColor.opacity(0.4), stateColor.opacity(0.1)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(stateColor.opacity(0.2), lineWidth: 1)
             )
-            .neonGlow(stateColor, radius: 15 * glowIntensity, isActive: rule.isCurrentlyBlocking)
-            .shimmer(isActive: isToggling)
-            .scaleEffect(isPressed ? 0.98 : 1.0)
         }
         .buttonStyle(.plain)
         .disabled(isToggling)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    withAnimation(.spring(response: 0.2)) {
-                        isPressed = true
-                    }
-                }
-                .onEnded { _ in
-                    withAnimation(.spring(response: 0.3)) {
-                        isPressed = false
-                    }
-                }
-        )
-        .animation(.spring(response: 0.4), value: rule.scheduleMode)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
-                glowIntensity = 0.6
-            }
-        }
     }
 }
 

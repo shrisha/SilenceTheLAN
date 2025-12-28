@@ -27,9 +27,6 @@ struct SilenceTheLANApp: App {
             RootView()
                 .environmentObject(appState)
                 .preferredColorScheme(.dark)
-                .onAppear {
-                    appState.configure(modelContext: sharedModelContainer.mainContext)
-                }
         }
         .modelContainer(sharedModelContainer)
     }

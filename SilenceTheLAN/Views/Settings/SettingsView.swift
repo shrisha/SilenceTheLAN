@@ -4,6 +4,15 @@ struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var showResetConfirmation = false
+    @State private var showLogoutConfirmation = false
+
+    private var loggedInUsername: String? {
+        try? KeychainService.shared.getCredentials().username
+    }
+
+    private var unifiHost: String {
+        appState.networkMonitor.configuredHost ?? "Not configured"
+    }
 
     var body: some View {
         NavigationStack {
@@ -28,59 +37,61 @@ struct SettingsView: View {
                                     .background(Color.theme.glassStroke)
 
                                 SettingsRow(
-                                    icon: "network",
+                                    icon: "server.rack",
                                     iconColor: Color.theme.neonBlue,
-                                    title: "Network",
-                                    value: appState.networkMonitor.isWiFi ? "WiFi" : "Other"
+                                    title: "IP Address",
+                                    value: unifiHost
                                 )
                             }
                         }
 
-                        // Rules Section
-                        SettingsSection(title: "RULES") {
+                        // Account Section
+                        SettingsSection(title: "ACCOUNT") {
                             VStack(spacing: 0) {
-                                NavigationLink {
-                                    ManageRulesView()
-                                        .environmentObject(appState)
-                                } label: {
-                                    SettingsRow(
-                                        icon: "list.bullet.rectangle",
-                                        iconColor: Color.theme.neonPurple,
-                                        title: "Manage Rules",
-                                        value: "\(appState.rules.count)",
-                                        showChevron: true
-                                    )
-                                }
+                                SettingsRow(
+                                    icon: "person.circle",
+                                    iconColor: Color.theme.neonPurple,
+                                    title: "Logged in as",
+                                    value: loggedInUsername ?? "Unknown"
+                                )
 
                                 Divider()
                                     .background(Color.theme.glassStroke)
 
                                 Button {
-                                    Task {
-                                        await appState.refreshRules()
-                                    }
+                                    showLogoutConfirmation = true
                                 } label: {
                                     SettingsRow(
-                                        icon: "arrow.clockwise",
-                                        iconColor: Color.theme.neonGreen,
-                                        title: "Refresh Rules",
-                                        showChevron: false
+                                        icon: "rectangle.portrait.and.arrow.right",
+                                        iconColor: Color.theme.textSecondary,
+                                        title: "Log Out"
                                     )
                                 }
-                                .disabled(appState.isLoading)
+                            }
+                        }
+
+                        // Rules Section
+                        SettingsSection(title: "RULES") {
+                            NavigationLink {
+                                ManageRulesView()
+                                    .environmentObject(appState)
+                            } label: {
+                                SettingsRow(
+                                    icon: "list.bullet.rectangle",
+                                    iconColor: Color.theme.neonGreen,
+                                    title: "Manage Rules",
+                                    value: "\(appState.rules.count)",
+                                    showChevron: true
+                                )
                             }
                         }
 
                         // App Section
                         SettingsSection(title: "APP") {
-                            VStack(spacing: 0) {
-                                SettingsRow(
-                                    icon: "info.circle",
-                                    iconColor: Color.theme.textSecondary,
-                                    title: "Version",
-                                    value: "1.0.0"
-                                )
-                            }
+                            SettingsRow(
+                                title: "Version",
+                                value: "1.0.0"
+                            )
                         }
 
                         // Danger Zone
@@ -129,6 +140,15 @@ struct SettingsView: View {
             } message: {
                 Text("This will remove all settings and you'll need to set up the app again.")
             }
+            .alert("Log Out?", isPresented: $showLogoutConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Log Out", role: .destructive) {
+                    appState.logout()
+                    dismiss()
+                }
+            } message: {
+                Text("You'll need to enter your credentials again to use the app.")
+            }
         }
     }
 }
@@ -161,7 +181,7 @@ struct SettingsSection<Content: View>: View {
 // MARK: - Settings Row
 
 struct SettingsRow: View {
-    let icon: String
+    var icon: String? = nil
     var iconColor: Color = Color.theme.textSecondary
     let title: String
     var value: String? = nil
@@ -170,10 +190,12 @@ struct SettingsRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(iconColor)
-                .frame(width: 28)
+            if let icon = icon {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundColor(iconColor)
+                    .frame(width: 28)
+            }
 
             Text(title)
                 .font(.body)
