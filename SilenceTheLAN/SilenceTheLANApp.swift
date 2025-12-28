@@ -22,6 +22,11 @@ struct SilenceTheLANApp: App {
         }
     }()
 
+    init() {
+        // Register App Shortcuts with Siri
+        SilenceTheLANShortcuts.updateAppShortcutParameters()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
