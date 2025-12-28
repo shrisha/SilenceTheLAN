@@ -8,6 +8,9 @@ private let logger = Logger(subsystem: "com.silencethelan", category: "AppState"
 
 @MainActor
 final class AppState: ObservableObject {
+    // Shared instance for Siri Intents access
+    static let shared = AppState()
+
     // MARK: - Published State
 
     @Published var isInitialized = false  // Has configuration been checked?

@@ -3,7 +3,7 @@ import SwiftData
 
 @main
 struct SilenceTheLANApp: App {
-    @StateObject private var appState = AppState()
+    @StateObject private var appState = AppState.shared
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
