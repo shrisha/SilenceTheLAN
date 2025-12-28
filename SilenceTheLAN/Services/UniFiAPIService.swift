@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-private let logger = Logger(subsystem: "com.silencetheLAN", category: "UniFiAPI")
+private let logger = Logger(subsystem: "com.shrisha.SilenceTheLAN", category: "UniFiAPI")
 
 // MARK: - API Response Types
 
@@ -189,7 +189,7 @@ final class UniFiAPIService {
             throw UniFiAPIError.invalidURL
         }
 
-        var request = try buildRequest(url: url, method: "GET")
+        let request = try buildRequest(url: url, method: "GET")
         logger.info("Fetching sites from: \(urlString)")
 
         let response: SiteListResponse = try await execute(request)
