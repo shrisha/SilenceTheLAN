@@ -591,43 +591,12 @@ final class UniFiAPIService {
         // Set User-Agent to match curl (iOS might add its own otherwise)
         request.setValue("curl/8.7.1", forHTTPHeaderField: "User-Agent")
 
-        // Debug: Compare JSONEncoder output vs manual string
+        // Build login request
         let loginData = LoginRequest(username: username, password: password)
         let encoder = JSONEncoder()
-        if let encodedData = try? encoder.encode(loginData),
-           let encodedString = String(data: encodedData, encoding: .utf8) {
-            logger.info("JSONEncoder output: \(encodedString)")
-        }
+        request.httpBody = try encoder.encode(loginData)
 
-        // Manual JSON (this works)
-        let jsonString = "{\"username\":\"\(username)\",\"password\":\"\(password)\",\"token\":\"\",\"rememberMe\":true}"
-        logger.info("Manual JSON: \(jsonString)")
-
-        // Use manual JSON for now (known to work)
-        request.httpBody = jsonString.data(using: .utf8)
-
-        // Log request body for debugging
-        if let bodyData = request.httpBody, let bodyString = String(data: bodyData, encoding: .utf8) {
-            logger.info("Login request body: \(bodyString)")
-            logger.debug("Login request body bytes: \(bodyData.count)")
-        }
-
-        // Log all request headers
-        if let headers = request.allHTTPHeaderFields {
-            for (key, value) in headers {
-                logger.debug("Request header: \(key): \(value)")
-            }
-        }
-
-        // Log cookies being sent
-        if let cookies = HTTPCookieStorage.shared.cookies(for: url) {
-            logger.info("Cookies being sent: \(cookies.count)")
-            for cookie in cookies {
-                logger.debug("Cookie: \(cookie.name)=\(cookie.value.prefix(20))...")
-            }
-        }
-
-        logger.info("Attempting session login to: \(urlString)")
+        logger.info("Attempting session login for user: \(username)")
 
         let data: Data
         let response: URLResponse
@@ -833,45 +802,19 @@ final class UniFiAPIService {
     // MARK: - List Firewall Rules (REST API with session auth)
 
     func listFirewallRules() async throws -> [FirewallPolicyDTO] {
-        // Use the configured siteId (which is the site name for REST API)
         let siteName = siteId.isEmpty ? "default" : siteId
-
-        logger.info("listFirewallRules: Using site '\(siteName)', isLoggedIn=\(self.isLoggedIn)")
-
-        // Ensure we're logged in
         try await ensureLoggedIn()
 
-        logger.info("listFirewallRules: After ensureLoggedIn, isLoggedIn=\(self.isLoggedIn)")
-
-        // v2 API endpoint for firewall policies (zone-based rules)
         let urlString = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall-policies"
         guard let url = URL(string: urlString) else {
             throw UniFiAPIError.invalidURL
         }
 
-        logger.info("Fetching firewall policies from: \(urlString)")
-
         var request = buildSessionRequest(url: url, method: "GET")
         request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
 
-        // Log cookies being sent
-        if let cookies = HTTPCookieStorage.shared.cookies(for: url) {
-            logger.info("Sending \(cookies.count) cookies with firewall request")
-            for cookie in cookies {
-                logger.debug("Cookie: \(cookie.name)")
-            }
-        } else {
-            logger.warning("No cookies found for firewall request!")
-        }
-
-        // v2 API returns array directly, not wrapped in {data: [...]}
         let policies: [FirewallPolicyDTO] = try await executeArray(request)
-        logger.info("Firewall policies API returned \(policies.count) rules")
-
-        // Log schedule details for downtime rules
-        for policy in policies where policy.name.lowercased().contains("downtime") {
-            logger.info("Downtime rule '\(policy.name)': schedule mode=\(policy.schedule?.mode ?? "nil"), start=\(policy.schedule?.timeRangeStart ?? "nil"), end=\(policy.schedule?.timeRangeEnd ?? "nil"), repeatDays=\(policy.schedule?.repeatOnDays?.joined(separator: ",") ?? "nil")")
-        }
+        logger.info("Fetched \(policies.count) firewall policies")
 
         return policies
     }
@@ -880,8 +823,6 @@ final class UniFiAPIService {
     private func executeArray<T: Decodable>(_ request: URLRequest) async throws -> [T] {
         let data: Data
         let response: URLResponse
-
-        logger.debug("Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "nil")")
 
         do {
             (data, response) = try await session.data(for: request)
@@ -892,26 +833,6 @@ final class UniFiAPIService {
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw UniFiAPIError.networkError(NSError(domain: "UniFiAPI", code: -1))
-        }
-
-        logger.debug("Response: \(httpResponse.statusCode)")
-
-        if let responseString = String(data: data, encoding: .utf8) {
-            logger.debug("Response body: \(responseString.prefix(500))")
-            // Log raw JSON for downtime rules to debug schedule parsing
-            if responseString.lowercased().contains("downtime") {
-                if let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                    for item in jsonArray {
-                        if let name = item["name"] as? String, name.lowercased().contains("downtime") {
-                            if let schedule = item["schedule"] as? [String: Any] {
-                                logger.info("RAW SCHEDULE JSON for '\(name)': \(schedule)")
-                            } else {
-                                logger.warning("NO SCHEDULE field found for '\(name)'")
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         switch httpResponse.statusCode {
@@ -960,20 +881,9 @@ final class UniFiAPIService {
             throw UniFiAPIError.invalidURL
         }
 
-        logger.info("Updating firewall policy: \(urlString)")
-        logger.info("CSRF token present: \(self.csrfToken != nil), value prefix: \(self.csrfToken?.prefix(20) ?? "nil")")
+        logger.info("Updating firewall policy: \(policyId)")
         var request = buildSessionRequest(url: url, method: "PUT")
         request.httpBody = try JSONSerialization.data(withJSONObject: update)
-
-        // Log the request body
-        if let bodyData = request.httpBody, let bodyString = String(data: bodyData, encoding: .utf8) {
-            logger.info("PUT body: \(bodyString)")
-        }
-
-        // Log cookies being sent
-        if let cookies = HTTPCookieStorage.shared.cookies(for: url) {
-            logger.info("Sending \(cookies.count) cookies with PUT request: \(cookies.map { $0.name }.joined(separator: ", "))")
-        }
 
         return try await execute(request)
     }
@@ -1078,24 +988,10 @@ final class UniFiAPIService {
             throw UniFiAPIError.invalidURL
         }
 
-        logger.info("Updating firewall policy (full object): \(urlString)")
-        logger.info("CSRF token present: \(self.csrfToken != nil)")
-
         var request = buildSessionRequest(url: url, method: "PUT")
         request.httpBody = try JSONSerialization.data(withJSONObject: policy)
 
-        // Log cookies being sent
-        if let cookies = HTTPCookieStorage.shared.cookies(for: url) {
-            logger.info("Sending \(cookies.count) cookies with PUT: \(cookies.map { $0.name }.joined(separator: ", "))")
-        }
-
         return try await execute(request)
-    }
-
-    /// Legacy toggle for enabled state (kept for backward compatibility)
-    func toggleFirewallRule(ruleId: String, enabled: Bool) async throws -> FirewallPolicyDTO {
-        let update: [String: Any] = ["enabled": enabled]
-        return try await updateFirewallPolicy(policyId: ruleId, update: update)
     }
 
     // MARK: - Pause/Unpause Firewall Rule
@@ -1121,11 +1017,6 @@ final class UniFiAPIService {
 
         var request = buildSessionRequest(url: url, method: "PUT")
         request.httpBody = try JSONSerialization.data(withJSONObject: updates)
-
-        // Log request
-        if let bodyData = request.httpBody, let bodyString = String(data: bodyData, encoding: .utf8) {
-            logger.info("Batch update body: \(bodyString)")
-        }
 
         // Execute and parse response (batch returns array)
         let results: [FirewallPolicyDTO] = try await executeArray(request)
@@ -1200,8 +1091,6 @@ final class UniFiAPIService {
         let data: Data
         let response: URLResponse
 
-        logger.debug("Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "nil")")
-
         do {
             (data, response) = try await session.data(for: request)
         } catch {
@@ -1210,7 +1099,6 @@ final class UniFiAPIService {
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            logger.error("Invalid response type")
             throw UniFiAPIError.networkError(
                 NSError(domain: "UniFiAPI", code: -1, userInfo: [
                     NSLocalizedDescriptionKey: "Invalid response type"
@@ -1218,18 +1106,10 @@ final class UniFiAPIService {
             )
         }
 
-        logger.debug("Response: \(httpResponse.statusCode)")
-
-        // Log response body for debugging
-        if let responseString = String(data: data, encoding: .utf8) {
-            logger.debug("Response body: \(responseString.prefix(500))")
-        }
-
         switch httpResponse.statusCode {
         case 200...299:
             do {
-                let decoder = JSONDecoder()
-                return try decoder.decode(T.self, from: data)
+                return try JSONDecoder().decode(T.self, from: data)
             } catch {
                 logger.error("Decoding error: \(error.localizedDescription)")
                 throw UniFiAPIError.decodingError(error)
@@ -1238,8 +1118,6 @@ final class UniFiAPIService {
             let message = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw UniFiAPIError.badRequest(message)
         case 401:
-            // Session expired - clear it so next ensureLoggedIn() will re-login
-            logger.warning("Got 401 - session expired, clearing session")
             isLoggedIn = false
             throw UniFiAPIError.unauthorized
         case 404:
