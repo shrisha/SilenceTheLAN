@@ -1,20 +1,19 @@
-//
-//  SilenceTheLANApp.swift
-//  SilenceTheLAN
-//
-//  Created by Shrisha Radhakrishna on 12/27/25.
-//
-
 import SwiftUI
 import SwiftData
 
 @main
 struct SilenceTheLANApp: App {
+    @StateObject private var appState = AppState()
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            AppConfiguration.self,
+            ACLRule.self
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let modelConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false
+        )
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -25,7 +24,12 @@ struct SilenceTheLANApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
+                .environmentObject(appState)
+                .preferredColorScheme(.dark)
+                .onAppear {
+                    appState.configure(modelContext: sharedModelContainer.mainContext)
+                }
         }
         .modelContainer(sharedModelContainer)
     }
