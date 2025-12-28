@@ -448,17 +448,18 @@ final class UniFiAPIService {
 
     /// Restore session from persisted storage (call on app launch)
     func restoreSession() {
-        // Restore CSRF token from Keychain
-        if let savedToken = try? KeychainService.shared.getCSRFToken() {
-            csrfToken = savedToken
-            logger.info("Restored CSRF token from Keychain")
-        }
-
-        // Check if we have a valid TOKEN cookie
+        // Check if we have a valid TOKEN cookie and extract CSRF from it
         if let url = URL(string: "https://\(host)"),
            let cookies = HTTPCookieStorage.shared.cookies(for: url) {
             for cookie in cookies {
                 if cookie.name == "TOKEN" {
+                    // Extract CSRF token from JWT
+                    if let extractedCsrf = extractCsrfFromJWT(cookie.value) {
+                        csrfToken = extractedCsrf
+                        logger.info("Extracted CSRF token from stored JWT: \(extractedCsrf.prefix(20))...")
+                        // Save the correct CSRF token
+                        try? KeychainService.shared.saveCSRFToken(extractedCsrf)
+                    }
                     // Check if cookie is not expired
                     if let expiresDate = cookie.expiresDate, expiresDate > Date() {
                         isLoggedIn = true
@@ -519,7 +520,13 @@ final class UniFiAPIService {
                     for cookie in cookies {
                         HTTPCookieStorage.shared.setCookie(cookie)
                         logger.debug("Got cookie: \(cookie.name)")
-                        if cookie.name == "TOKEN" || cookie.name == "csrf_token" {
+                        if cookie.name == "TOKEN" {
+                            // TOKEN is a JWT - extract csrfToken from payload
+                            if let extractedCsrf = extractCsrfFromJWT(cookie.value) {
+                                csrfToken = extractedCsrf
+                                logger.info("Extracted CSRF token from JWT: \(extractedCsrf.prefix(20))...")
+                            }
+                        } else if cookie.name == "csrf_token" {
                             csrfToken = cookie.value
                             logger.info("Got CSRF token from cookie: \(cookie.name)")
                         }
@@ -659,9 +666,11 @@ final class UniFiAPIService {
                 for cookie in cookies {
                     HTTPCookieStorage.shared.setCookie(cookie)
                     if cookie.name == "TOKEN" {
-                        // Some UniFi versions use TOKEN cookie for CSRF
-                        csrfToken = cookie.value
-                        logger.info("Got CSRF token from cookie")
+                        // TOKEN is a JWT - extract csrfToken from payload
+                        if let extractedCsrf = extractCsrfFromJWT(cookie.value) {
+                            csrfToken = extractedCsrf
+                            logger.info("Extracted CSRF token from JWT: \(extractedCsrf.prefix(20))...")
+                        }
                     }
                 }
                 logger.info("Stored \(cookies.count) session cookies")
@@ -952,8 +961,19 @@ final class UniFiAPIService {
         }
 
         logger.info("Updating firewall policy: \(urlString)")
+        logger.info("CSRF token present: \(self.csrfToken != nil), value prefix: \(self.csrfToken?.prefix(20) ?? "nil")")
         var request = buildSessionRequest(url: url, method: "PUT")
         request.httpBody = try JSONSerialization.data(withJSONObject: update)
+
+        // Log the request body
+        if let bodyData = request.httpBody, let bodyString = String(data: bodyData, encoding: .utf8) {
+            logger.info("PUT body: \(bodyString)")
+        }
+
+        // Log cookies being sent
+        if let cookies = HTTPCookieStorage.shared.cookies(for: url) {
+            logger.info("Sending \(cookies.count) cookies with PUT request: \(cookies.map { $0.name }.joined(separator: ", "))")
+        }
 
         return try await execute(request)
     }
@@ -963,7 +983,7 @@ final class UniFiAPIService {
     /// Toggle between "ALWAYS" (block now) and scheduled mode
     /// - Parameters:
     ///   - ruleId: The firewall policy ID
-    ///   - blockNow: If true, sets schedule to ALWAYS. If false, reverts to DAILY with given times.
+    ///   - blockNow: If true, sets schedule to ALWAYS. If false, reverts to EVERY_DAY with given times.
     ///   - scheduleStart: Start time for daily schedule (e.g., "23:00")
     ///   - scheduleEnd: End time for daily schedule (e.g., "07:00")
     func toggleFirewallSchedule(
@@ -972,25 +992,104 @@ final class UniFiAPIService {
         scheduleStart: String?,
         scheduleEnd: String?
     ) async throws -> FirewallPolicyDTO {
-        var scheduleDict: [String: Any]
+        // First, fetch the current policy to get all fields
+        let currentPolicy = try await getFirewallPolicyRaw(policyId: ruleId)
 
+        // Modify only the schedule
+        var updatedPolicy = currentPolicy
         if blockNow {
             // Set to ALWAYS - blocks immediately
-            scheduleDict = ["mode": "ALWAYS"]
+            updatedPolicy["schedule"] = ["mode": "ALWAYS"]
+            logger.info("Setting schedule to ALWAYS (block now)")
         } else {
-            // Revert to DAILY schedule with stored times
-            scheduleDict = ["mode": "DAILY"]
-            if let start = scheduleStart {
-                scheduleDict["time_range_start"] = start
-            }
-            if let end = scheduleEnd {
-                scheduleDict["time_range_end"] = end
+            // Revert to scheduled mode
+            if let start = scheduleStart, let end = scheduleEnd {
+                // We have stored schedule times - use EVERY_DAY
+                let scheduleDict: [String: Any] = [
+                    "mode": "EVERY_DAY",
+                    "time_range_start": start,
+                    "time_range_end": end
+                ]
+                updatedPolicy["schedule"] = scheduleDict
+                logger.info("Restoring EVERY_DAY schedule: \(start) - \(end)")
+            } else {
+                // No stored schedule - use ONE_TIME_ONLY with a past date
+                // This effectively disables the rule by setting it to a time that has already passed
+                let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                let pastDate = dateFormatter.string(from: yesterday)
+
+                let scheduleDict: [String: Any] = [
+                    "mode": "ONE_TIME_ONLY",
+                    "date": pastDate,
+                    "time_range_start": "00:00",
+                    "time_range_end": "00:01"
+                ]
+                updatedPolicy["schedule"] = scheduleDict
+                logger.info("No stored schedule - using ONE_TIME_ONLY with past date: \(pastDate)")
             }
         }
 
-        let update: [String: Any] = ["schedule": scheduleDict]
-        logger.info("Updating firewall schedule: blockNow=\(blockNow), schedule=\(scheduleDict)")
-        return try await updateFirewallPolicy(policyId: ruleId, update: update)
+        logger.info("Updating firewall schedule: blockNow=\(blockNow)")
+        return try await updateFirewallPolicyFull(policyId: ruleId, policy: updatedPolicy)
+    }
+
+    /// Get firewall policy as raw dictionary (for modification)
+    private func getFirewallPolicyRaw(policyId: String) async throws -> [String: Any] {
+        try await ensureLoggedIn()
+
+        let siteName = siteId.isEmpty ? "default" : siteId
+        let urlString = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall-policies/\(policyId)"
+
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        logger.info("Fetching policy for update: \(urlString)")
+        let request = buildSessionRequest(url: url, method: "GET")
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw UniFiAPIError.networkError(NSError(domain: "UniFiAPI", code: -1))
+        }
+
+        logger.info("GET policy response: \(httpResponse.statusCode)")
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw UniFiAPIError.notFound
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw UniFiAPIError.decodingError(NSError(domain: "UniFiAPI", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON"]))
+        }
+
+        return json
+    }
+
+    /// Update firewall policy with full object
+    private func updateFirewallPolicyFull(policyId: String, policy: [String: Any]) async throws -> FirewallPolicyDTO {
+        try await ensureLoggedIn()
+
+        let siteName = siteId.isEmpty ? "default" : siteId
+        let urlString = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall-policies/\(policyId)"
+
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        logger.info("Updating firewall policy (full object): \(urlString)")
+        logger.info("CSRF token present: \(self.csrfToken != nil)")
+
+        var request = buildSessionRequest(url: url, method: "PUT")
+        request.httpBody = try JSONSerialization.data(withJSONObject: policy)
+
+        // Log cookies being sent
+        if let cookies = HTTPCookieStorage.shared.cookies(for: url) {
+            logger.info("Sending \(cookies.count) cookies with PUT: \(cookies.map { $0.name }.joined(separator: ", "))")
+        }
+
+        return try await execute(request)
     }
 
     /// Legacy toggle for enabled state (kept for backward compatibility)
@@ -1108,5 +1207,45 @@ final class UniFiAPIService {
         default:
             throw UniFiAPIError.serverError(httpResponse.statusCode)
         }
+    }
+
+    // MARK: - JWT Helpers
+
+    /// Extract csrfToken from JWT payload
+    /// JWT format: header.payload.signature (base64 encoded)
+    private func extractCsrfFromJWT(_ jwt: String) -> String? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else {
+            logger.warning("Invalid JWT format - expected 3 parts, got \(parts.count)")
+            return nil
+        }
+
+        // Payload is the second part (index 1)
+        var payload = String(parts[1])
+
+        // Base64 requires padding to be multiple of 4
+        let paddingNeeded = (4 - payload.count % 4) % 4
+        payload += String(repeating: "=", count: paddingNeeded)
+
+        // JWT uses URL-safe base64 (replace - with + and _ with /)
+        payload = payload.replacingOccurrences(of: "-", with: "+")
+        payload = payload.replacingOccurrences(of: "_", with: "/")
+
+        guard let data = Data(base64Encoded: payload) else {
+            logger.warning("Failed to base64 decode JWT payload")
+            return nil
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            logger.warning("Failed to parse JWT payload as JSON")
+            return nil
+        }
+
+        guard let csrfToken = json["csrfToken"] as? String else {
+            logger.warning("No csrfToken found in JWT payload")
+            return nil
+        }
+
+        return csrfToken
     }
 }

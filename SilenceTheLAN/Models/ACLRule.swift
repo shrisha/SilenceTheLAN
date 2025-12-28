@@ -22,6 +22,10 @@ final class ACLRule {
     var scheduleEnd: String?      // Time like "07:00" (7 AM)
     var scheduleRepeatDaysJSON: String?  // JSON array of days
 
+    // Original schedule (preserved when toggled to ALWAYS, used to restore)
+    var originalScheduleStart: String?
+    var originalScheduleEnd: String?
+
     // App-specific
     var isSelected: Bool
     var lastSynced: Date

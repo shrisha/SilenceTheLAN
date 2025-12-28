@@ -231,10 +231,18 @@ final class AppState: ObservableObject {
                 existing.name = dto.name
                 existing.action = dto.action
                 existing.index = dto.index ?? 0
-                // Update schedule info
-                existing.scheduleMode = dto.schedule?.mode ?? "ALWAYS"
-                existing.scheduleStart = dto.schedule?.timeRangeStart
-                existing.scheduleEnd = dto.schedule?.timeRangeEnd
+
+                // Update schedule info - but preserve original times if switching to ALWAYS
+                let newMode = dto.schedule?.mode ?? "ALWAYS"
+                if newMode.uppercased() != "ALWAYS" {
+                    // Non-ALWAYS mode: update both current and original schedule times
+                    existing.scheduleStart = dto.schedule?.timeRangeStart
+                    existing.scheduleEnd = dto.schedule?.timeRangeEnd
+                    existing.originalScheduleStart = dto.schedule?.timeRangeStart
+                    existing.originalScheduleEnd = dto.schedule?.timeRangeEnd
+                }
+                // Always update the mode (but original times are preserved when ALWAYS)
+                existing.scheduleMode = newMode
                 existing.lastSynced = Date()
             }
         }
@@ -316,6 +324,11 @@ final class AppState: ObservableObject {
                 isSelected: true,
                 lastSynced: Date()
             )
+            // Store original schedule times (for restoration when toggling back from ALWAYS)
+            if dto.schedule?.mode?.uppercased() != "ALWAYS" {
+                rule.originalScheduleStart = dto.schedule?.timeRangeStart
+                rule.originalScheduleEnd = dto.schedule?.timeRangeEnd
+            }
             context.insert(rule)
         }
 
@@ -349,6 +362,11 @@ final class AppState: ObservableObject {
             isSelected: true,
             lastSynced: Date()
         )
+        // Store original schedule times (for restoration when toggling back from ALWAYS)
+        if dto.schedule?.mode?.uppercased() != "ALWAYS" {
+            rule.originalScheduleStart = dto.schedule?.timeRangeStart
+            rule.originalScheduleEnd = dto.schedule?.timeRangeEnd
+        }
         context.insert(rule)
 
         try? context.save()
@@ -378,16 +396,23 @@ final class AppState: ObservableObject {
     func toggleRule(_ rule: ACLRule) async {
         guard !togglingRuleIds.contains(rule.ruleId) else { return }
 
-        // For firewall rules, toggle = switch between ALWAYS and DAILY schedule
+        // For firewall rules, toggle = switch between ALWAYS and scheduled mode
         let wasOverrideActive = rule.isOverrideActive
         let newOverrideState = !wasOverrideActive
 
         // Store previous state for rollback
         let previousScheduleMode = rule.scheduleMode
 
+        // Before toggling to ALWAYS, save current schedule times as original (if we have them)
+        if newOverrideState && rule.scheduleStart != nil && rule.scheduleEnd != nil {
+            rule.originalScheduleStart = rule.scheduleStart
+            rule.originalScheduleEnd = rule.scheduleEnd
+            logger.info("Saved original schedule: \(rule.scheduleStart ?? "nil") - \(rule.scheduleEnd ?? "nil")")
+        }
+
         // Optimistic update
         togglingRuleIds.insert(rule.ruleId)
-        rule.scheduleMode = newOverrideState ? "ALWAYS" : "DAILY"
+        rule.scheduleMode = newOverrideState ? "ALWAYS" : "EVERY_DAY"
 
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .medium)
@@ -395,13 +420,25 @@ final class AppState: ObservableObject {
 
         do {
             if usingFirewallRules {
+                // Use original schedule times when toggling back from ALWAYS
+                let scheduleStart = rule.originalScheduleStart ?? rule.scheduleStart
+                let scheduleEnd = rule.originalScheduleEnd ?? rule.scheduleEnd
+
+                logger.info("Toggle: blockNow=\(newOverrideState), scheduleStart=\(scheduleStart ?? "nil"), scheduleEnd=\(scheduleEnd ?? "nil")")
+
                 // Use schedule-based toggle for firewall rules
                 _ = try await api.toggleFirewallSchedule(
                     ruleId: rule.ruleId,
                     blockNow: newOverrideState,
-                    scheduleStart: rule.scheduleStart,
-                    scheduleEnd: rule.scheduleEnd
+                    scheduleStart: scheduleStart,
+                    scheduleEnd: scheduleEnd
                 )
+
+                // Update local schedule times if we restored them
+                if !newOverrideState {
+                    rule.scheduleStart = scheduleStart
+                    rule.scheduleEnd = scheduleEnd
+                }
             } else {
                 // Legacy ACL rules use enabled toggle
                 _ = try await api.toggleRule(ruleId: rule.ruleId, enabled: !rule.isEnabled)
