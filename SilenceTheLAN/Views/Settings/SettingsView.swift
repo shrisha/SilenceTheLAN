@@ -39,12 +39,18 @@ struct SettingsView: View {
                         // Rules Section
                         SettingsSection(title: "RULES") {
                             VStack(spacing: 0) {
-                                SettingsRow(
-                                    icon: "list.bullet.rectangle",
-                                    iconColor: Color.theme.neonPurple,
-                                    title: "Managed Rules",
-                                    value: "\(appState.rules.count)"
-                                )
+                                NavigationLink {
+                                    ManageRulesView()
+                                        .environmentObject(appState)
+                                } label: {
+                                    SettingsRow(
+                                        icon: "list.bullet.rectangle",
+                                        iconColor: Color.theme.neonPurple,
+                                        title: "Manage Rules",
+                                        value: "\(appState.rules.count)",
+                                        showChevron: true
+                                    )
+                                }
 
                                 Divider()
                                     .background(Color.theme.glassStroke)
@@ -58,7 +64,7 @@ struct SettingsView: View {
                                         icon: "arrow.clockwise",
                                         iconColor: Color.theme.neonGreen,
                                         title: "Refresh Rules",
-                                        showChevron: true
+                                        showChevron: false
                                     )
                                 }
                                 .disabled(appState.isLoading)

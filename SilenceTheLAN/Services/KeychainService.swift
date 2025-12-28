@@ -93,6 +93,26 @@ final class KeychainService {
         try saveItem(account: passwordAccount, value: password)
     }
 
+    // MARK: - Session Token (CSRF token for authenticated requests)
+
+    private let csrfTokenAccount = "unifi-csrf-token"
+
+    func saveCSRFToken(_ token: String) throws {
+        try saveItem(account: csrfTokenAccount, value: token)
+    }
+
+    func getCSRFToken() throws -> String {
+        try getItem(account: csrfTokenAccount)
+    }
+
+    func deleteCSRFToken() throws {
+        try deleteItem(account: csrfTokenAccount)
+    }
+
+    var hasCSRFToken: Bool {
+        (try? getCSRFToken()) != nil
+    }
+
     func getCredentials() throws -> (username: String, password: String) {
         let username = try getItem(account: usernameAccount)
         let password = try getItem(account: passwordAccount)

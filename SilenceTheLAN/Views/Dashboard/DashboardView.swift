@@ -147,19 +147,19 @@ struct DashboardView: View {
                 Spacer()
             }
 
-            // Quick stats
+            // Quick stats - based on actual current blocking status
             HStack(spacing: 16) {
                 StatPill(
-                    icon: "checkmark.circle.fill",
-                    count: appState.rules.filter { $0.isEnabled }.count,
-                    label: "Active",
-                    color: Color.theme.neonGreen
-                )
-                StatPill(
-                    icon: "xmark.circle.fill",
-                    count: appState.rules.filter { !$0.isEnabled }.count,
+                    icon: "wifi.slash",
+                    count: appState.rules.filter { $0.isCurrentlyBlocking }.count,
                     label: "Blocked",
                     color: Color.theme.neonRed
+                )
+                StatPill(
+                    icon: "checkmark.circle.fill",
+                    count: appState.rules.filter { !$0.isCurrentlyBlocking }.count,
+                    label: "Allowed",
+                    color: Color.theme.neonGreen
                 )
                 Spacer()
             }
@@ -265,12 +265,13 @@ struct RuleCard: View {
     @State private var isPressed = false
     @State private var glowIntensity: Double = 1.0
 
+    // Use the computed properties from ACLRule model
     private var stateColor: Color {
-        rule.isEnabled ? Color.theme.neonGreen : Color.theme.neonRed
+        rule.isCurrentlyBlocking ? Color.theme.neonRed : Color.theme.neonGreen
     }
 
     private var statusText: String {
-        rule.isEnabled ? "ALLOWED" : "BLOCKED"
+        rule.isCurrentlyBlocking ? "BLOCKED" : "ALLOWED"
     }
 
     var body: some View {
@@ -281,7 +282,7 @@ struct RuleCard: View {
                     .fill(stateColor)
                     .frame(width: 12, height: 12)
                     .neonGlow(stateColor, radius: 8 * glowIntensity, isActive: true)
-                    .pulse(isActive: rule.isEnabled)
+                    .pulse(isActive: rule.isCurrentlyBlocking)
 
                 // Rule info
                 VStack(alignment: .leading, spacing: 4) {
@@ -289,6 +290,7 @@ struct RuleCard: View {
                         .font(.system(size: 20, weight: .semibold, design: .rounded))
                         .foregroundColor(.white)
 
+                    // Status and schedule info
                     HStack(spacing: 8) {
                         Text(statusText)
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -301,12 +303,17 @@ struct RuleCard: View {
                                 .scaleEffect(0.6)
                         }
                     }
+
+                    // Schedule summary
+                    Text(rule.scheduleSummary)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Color.theme.textTertiary)
                 }
 
                 Spacer()
 
-                // Toggle switch
-                CustomToggle(isOn: rule.isEnabled, color: stateColor)
+                // Toggle switch - ON means "Block Now" override is active
+                CustomToggle(isOn: rule.isOverrideActive, color: Color.theme.neonRed)
             }
             .padding(20)
             .background(
@@ -324,7 +331,7 @@ struct RuleCard: View {
                         lineWidth: 1
                     )
             )
-            .neonGlow(stateColor, radius: 15 * glowIntensity, isActive: rule.isEnabled)
+            .neonGlow(stateColor, radius: 15 * glowIntensity, isActive: rule.isCurrentlyBlocking)
             .shimmer(isActive: isToggling)
             .scaleEffect(isPressed ? 0.98 : 1.0)
         }
@@ -343,7 +350,7 @@ struct RuleCard: View {
                     }
                 }
         )
-        .animation(.spring(response: 0.4), value: rule.isEnabled)
+        .animation(.spring(response: 0.4), value: rule.scheduleMode)
         .onAppear {
             withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) {
                 glowIntensity = 0.6

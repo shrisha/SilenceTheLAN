@@ -43,7 +43,95 @@ struct ACLRuleMetadata: Codable {
     let origin: String?
 }
 
-// MARK: - Firewall Rule Types (REST API)
+// MARK: - Firewall Policy Types (v2 API - zone-based rules)
+
+struct FirewallPolicyDTO: Codable, Identifiable {
+    let id: String  // "_id" in JSON
+    let name: String
+    let enabled: Bool
+    let action: String  // "BLOCK", "ALLOW"
+    let index: Int?
+    let description: String?
+    let source: FirewallZoneFilter?
+    let destination: FirewallZoneFilter?
+    let schedule: FirewallSchedule?
+    let icmpTypename: String?
+    let ipSecMatching: String?
+    let logging: Bool?
+    let matchingTarget: String?
+    let stateEstablished: Bool?
+    let stateInvalid: Bool?
+    let stateNew: Bool?
+    let stateRelated: Bool?
+    let predefined: Bool?
+    let rulesetId: String?
+    let connectionStateMatching: String?
+    let createTime: String?
+    let protocolMatchExcepted: Bool?
+    let `protocol`: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id = "_id"
+        case name, enabled, action, index, description
+        case source, destination, schedule
+        case icmpTypename = "icmp_typename"
+        case ipSecMatching = "ip_sec_matching"
+        case logging
+        case matchingTarget = "matching_target"
+        case stateEstablished = "state_established"
+        case stateInvalid = "state_invalid"
+        case stateNew = "state_new"
+        case stateRelated = "state_related"
+        case predefined
+        case rulesetId = "ruleset_id"
+        case connectionStateMatching = "connection_state_matching"
+        case createTime = "create_time"
+        case protocolMatchExcepted = "protocol_match_excepted"
+        case `protocol`
+    }
+}
+
+struct FirewallZoneFilter: Codable {
+    let zoneIds: [String]?
+    let matchingTarget: String?  // "ANY", "IP", etc.
+    let networkId: String?
+    let networkIds: [String]?
+    let macAddress: String?
+    let ipGroupId: String?
+    let portGroupId: String?
+    let matchOppositeNats: Bool?
+    let clientMac: String?
+    let clientMacs: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case zoneIds = "zone_ids"
+        case matchingTarget = "matching_target"
+        case networkId = "network_id"
+        case networkIds = "network_ids"
+        case macAddress = "mac_address"
+        case ipGroupId = "ip_group_id"
+        case portGroupId = "port_group_id"
+        case matchOppositeNats = "match_opposite_nats"
+        case clientMac = "client_mac"
+        case clientMacs = "client_macs"
+    }
+}
+
+struct FirewallSchedule: Codable {
+    let mode: String?  // "ALWAYS", "CUSTOM"
+    let timeRangeStart: String?
+    let timeRangeEnd: String?
+    let repeatOnDays: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case timeRangeStart = "time_range_start"
+        case timeRangeEnd = "time_range_end"
+        case repeatOnDays = "repeat_on_days"
+    }
+}
+
+// MARK: - Firewall Rule Types (Legacy REST API)
 
 struct FirewallRuleListResponse: Codable {
     let data: [FirewallRuleDTO]
@@ -338,8 +426,8 @@ final class UniFiAPIService {
 
     // MARK: - Session Login
 
-    /// Clear any existing session state before fresh login
-    private func clearSession() {
+    /// Clear any existing session state (call when logout or session invalid)
+    func clearSession() {
         isLoggedIn = false
         csrfToken = nil
         sessionCookies = []
@@ -353,6 +441,51 @@ final class UniFiAPIService {
             }
             logger.info("Cleared \(cookies.count) existing cookies")
         }
+
+        // Clear saved CSRF token
+        try? KeychainService.shared.deleteCSRFToken()
+    }
+
+    /// Restore session from persisted storage (call on app launch)
+    func restoreSession() {
+        // Restore CSRF token from Keychain
+        if let savedToken = try? KeychainService.shared.getCSRFToken() {
+            csrfToken = savedToken
+            logger.info("Restored CSRF token from Keychain")
+        }
+
+        // Check if we have a valid TOKEN cookie
+        if let url = URL(string: "https://\(host)"),
+           let cookies = HTTPCookieStorage.shared.cookies(for: url) {
+            for cookie in cookies {
+                if cookie.name == "TOKEN" {
+                    // Check if cookie is not expired
+                    if let expiresDate = cookie.expiresDate, expiresDate > Date() {
+                        isLoggedIn = true
+                        logger.info("Found valid session cookie, expires: \(expiresDate)")
+                        return
+                    } else if cookie.expiresDate == nil {
+                        // Session cookie (no expiry) - assume valid
+                        isLoggedIn = true
+                        logger.info("Found session cookie (no expiry)")
+                        return
+                    }
+                }
+            }
+        }
+
+        logger.info("No valid session found, will need to login")
+    }
+
+    /// Check if we have a potentially valid session (without making a network request)
+    func hasSession() -> Bool {
+        guard !host.isEmpty else { return false }
+
+        if let url = URL(string: "https://\(host)"),
+           let cookies = HTTPCookieStorage.shared.cookies(for: url) {
+            return cookies.contains { $0.name == "TOKEN" }
+        }
+        return false
     }
 
     /// Fetch initial CSRF token and cookies before login
@@ -420,8 +553,18 @@ final class UniFiAPIService {
     }
 
     func login(username: String, password: String) async throws {
-        // Clear any stale cookies/session state
-        clearSession()
+        // Clear any existing cookies before login - stale tokens cause 403
+        if let url = URL(string: "https://\(host)"),
+           let cookies = HTTPCookieStorage.shared.cookies(for: url) {
+            for cookie in cookies {
+                HTTPCookieStorage.shared.deleteCookie(cookie)
+            }
+            logger.info("Cleared \(cookies.count) cookies before login")
+        }
+
+        // Reset session state
+        isLoggedIn = false
+        csrfToken = nil
 
         // First test if we can reach the server at all
         let reachable = await testServerReachability()
@@ -441,11 +584,20 @@ final class UniFiAPIService {
         // Set User-Agent to match curl (iOS might add its own otherwise)
         request.setValue("curl/8.7.1", forHTTPHeaderField: "User-Agent")
 
-        // Manually construct JSON to exactly match what curl sends
-        let jsonString = "{\"username\":\"\(username)\",\"password\":\"\(password)\",\"token\":\"\",\"rememberMe\":true}"
-        request.httpBody = jsonString.data(using: .utf8)
+        // Debug: Compare JSONEncoder output vs manual string
+        let loginData = LoginRequest(username: username, password: password)
+        let encoder = JSONEncoder()
+        if let encodedData = try? encoder.encode(loginData),
+           let encodedString = String(data: encodedData, encoding: .utf8) {
+            logger.info("JSONEncoder output: \(encodedString)")
+        }
 
-        logger.info("Login JSON: \(jsonString)")
+        // Manual JSON (this works)
+        let jsonString = "{\"username\":\"\(username)\",\"password\":\"\(password)\",\"token\":\"\",\"rememberMe\":true}"
+        logger.info("Manual JSON: \(jsonString)")
+
+        // Use manual JSON for now (known to work)
+        request.httpBody = jsonString.data(using: .utf8)
 
         // Log request body for debugging
         if let bodyData = request.httpBody, let bodyString = String(data: bodyData, encoding: .utf8) {
@@ -518,6 +670,12 @@ final class UniFiAPIService {
             isLoggedIn = true
             logger.info("Session login successful")
 
+            // Persist CSRF token for session restoration
+            if let csrf = csrfToken {
+                try? KeychainService.shared.saveCSRFToken(csrf)
+                logger.info("Saved CSRF token to Keychain")
+            }
+
         case 401:
             throw UniFiAPIError.unauthorized
 
@@ -551,13 +709,26 @@ final class UniFiAPIService {
     }
 
     func ensureLoggedIn() async throws {
-        guard !isLoggedIn else { return }
+        // Already logged in this session
+        if isLoggedIn {
+            logger.debug("ensureLoggedIn: Already logged in")
+            return
+        }
 
+        // Try to restore session from persisted storage
+        restoreSession()
+        if isLoggedIn {
+            logger.info("ensureLoggedIn: Session restored from storage")
+            return
+        }
+
+        // No valid session, need to login with credentials
         guard let credentials = try? KeychainService.shared.getCredentials() else {
             logger.warning("No credentials stored, cannot login")
             throw UniFiAPIError.noCredentials
         }
 
+        logger.info("ensureLoggedIn: Logging in with stored credentials")
         try await login(username: credentials.username, password: credentials.password)
     }
 
@@ -652,97 +823,48 @@ final class UniFiAPIService {
 
     // MARK: - List Firewall Rules (REST API with session auth)
 
-    func listFirewallRules() async throws -> [FirewallRuleDTO] {
-        let siteName = "default"
-        var allRules: [FirewallRuleDTO] = []
+    func listFirewallRules() async throws -> [FirewallPolicyDTO] {
+        // Use the configured siteId (which is the site name for REST API)
+        let siteName = siteId.isEmpty ? "default" : siteId
 
-        // Try session login first for REST API access
-        try? await ensureLoggedIn()
+        logger.info("listFirewallRules: Using site '\(siteName)', isLoggedIn=\(self.isLoggedIn)")
 
-        // Try all known endpoints and collect results
+        // Ensure we're logged in
+        try await ensureLoggedIn()
 
-        // 1. Legacy REST API firewallrule (requires session auth)
-        let legacyUrl = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule"
-        logger.info("Trying legacy firewall rules API (session auth): \(legacyUrl)")
-        if let url = URL(string: legacyUrl) {
-            do {
-                let request = buildSessionRequest(url: url, method: "GET")
-                let response: FirewallRuleListResponse = try await execute(request)
-                if response.meta.rc == "ok" {
-                    logger.info("Legacy API (session) returned \(response.data.count) rules")
-                    allRules.append(contentsOf: response.data)
-                }
-            } catch {
-                logger.warning("Legacy firewall rules failed: \(error.localizedDescription)")
+        logger.info("listFirewallRules: After ensureLoggedIn, isLoggedIn=\(self.isLoggedIn)")
+
+        // v2 API endpoint for firewall policies (zone-based rules)
+        let urlString = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall-policies"
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        logger.info("Fetching firewall policies from: \(urlString)")
+
+        var request = buildSessionRequest(url: url, method: "GET")
+        request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+
+        // Log cookies being sent
+        if let cookies = HTTPCookieStorage.shared.cookies(for: url) {
+            logger.info("Sending \(cookies.count) cookies with firewall request")
+            for cookie in cookies {
+                logger.debug("Cookie: \(cookie.name)")
             }
+        } else {
+            logger.warning("No cookies found for firewall request!")
         }
 
-        // If we got rules from session auth, return them
-        if !allRules.isEmpty {
-            logger.info("Total firewall rules from session auth: \(allRules.count)")
-            return allRules
+        // v2 API returns array directly, not wrapped in {data: [...]}
+        let policies: [FirewallPolicyDTO] = try await executeArray(request)
+        logger.info("Firewall policies API returned \(policies.count) rules")
+
+        // Log schedule details for downtime rules
+        for policy in policies where policy.name.lowercased().contains("downtime") {
+            logger.info("Downtime rule '\(policy.name)': schedule mode=\(policy.schedule?.mode ?? "nil"), start=\(policy.schedule?.timeRangeStart ?? "nil"), end=\(policy.schedule?.timeRangeEnd ?? "nil"), repeatDays=\(policy.schedule?.repeatOnDays?.joined(separator: ",") ?? "nil")")
         }
 
-        // Fall back to API key auth for other endpoints
-
-        // 2. Zone-based firewall policies (newer UniFi)
-        let policiesUrl = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall/policies"
-        logger.info("Trying firewall policies API: \(policiesUrl)")
-        if let url = URL(string: policiesUrl) {
-            do {
-                let request = try buildRequest(url: url, method: "GET")
-                let response: [FirewallRuleDTO] = try await executeArray(request)
-                logger.info("Policies API returned \(response.count) rules")
-                allRules.append(contentsOf: response)
-            } catch {
-                logger.warning("Firewall policies failed: \(error.localizedDescription)")
-            }
-        }
-
-        // 3. v2 traffic rules
-        let trafficUrl = "https://\(host)/proxy/network/v2/api/site/\(siteName)/trafficrules"
-        logger.info("Trying v2 traffic rules API: \(trafficUrl)")
-        if let url = URL(string: trafficUrl) {
-            do {
-                let request = try buildRequest(url: url, method: "GET")
-                let response: [FirewallRuleDTO] = try await executeArray(request)
-                logger.info("Traffic rules API returned \(response.count) rules")
-                allRules.append(contentsOf: response)
-            } catch {
-                logger.warning("v2 traffic rules failed: \(error.localizedDescription)")
-            }
-        }
-
-        // 4. Try firewall/rules endpoint
-        let rulesUrl = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall/rules"
-        logger.info("Trying firewall rules API: \(rulesUrl)")
-        if let url = URL(string: rulesUrl) {
-            do {
-                let request = try buildRequest(url: url, method: "GET")
-                let response: [FirewallRuleDTO] = try await executeArray(request)
-                logger.info("Firewall rules API returned \(response.count) rules")
-                allRules.append(contentsOf: response)
-            } catch {
-                logger.warning("Firewall rules failed: \(error.localizedDescription)")
-            }
-        }
-
-        // 5. Try Integration API firewall endpoint (with siteId)
-        let integrationFirewallUrl = "https://\(host)/proxy/network/integration/v1/sites/\(siteId)/firewall/policies"
-        logger.info("Trying Integration API firewall: \(integrationFirewallUrl)")
-        if let url = URL(string: integrationFirewallUrl) {
-            do {
-                let request = try buildRequest(url: url, method: "GET")
-                let response: [FirewallRuleDTO] = try await executeArray(request)
-                logger.info("Integration firewall API returned \(response.count) rules")
-                allRules.append(contentsOf: response)
-            } catch {
-                logger.warning("Integration firewall failed: \(error.localizedDescription)")
-            }
-        }
-
-        logger.info("Total firewall rules collected: \(allRules.count)")
-        return allRules
+        return policies
     }
 
     // Execute request expecting array response (for v2 API)
@@ -767,6 +889,20 @@ final class UniFiAPIService {
 
         if let responseString = String(data: data, encoding: .utf8) {
             logger.debug("Response body: \(responseString.prefix(500))")
+            // Log raw JSON for downtime rules to debug schedule parsing
+            if responseString.lowercased().contains("downtime") {
+                if let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                    for item in jsonArray {
+                        if let name = item["name"] as? String, name.lowercased().contains("downtime") {
+                            if let schedule = item["schedule"] as? [String: Any] {
+                                logger.info("RAW SCHEDULE JSON for '\(name)': \(schedule)")
+                            } else {
+                                logger.warning("NO SCHEDULE field found for '\(name)'")
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         switch httpResponse.statusCode {
@@ -786,55 +922,81 @@ final class UniFiAPIService {
         }
     }
 
-    // MARK: - Get Single Firewall Rule (session auth)
+    // MARK: - Get Single Firewall Policy (v2 API)
 
-    func getFirewallRule(ruleId: String) async throws -> FirewallRuleDTO {
+    func getFirewallPolicy(policyId: String) async throws -> FirewallPolicyDTO {
         try await ensureLoggedIn()
 
-        let siteName = "default"
-        let urlString = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule/\(ruleId)"
+        let siteName = siteId.isEmpty ? "default" : siteId
+        let urlString = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall-policies/\(policyId)"
 
         guard let url = URL(string: urlString) else {
             throw UniFiAPIError.invalidURL
         }
 
+        logger.info("Getting firewall policy: \(urlString)")
         let request = buildSessionRequest(url: url, method: "GET")
-        let response: FirewallRuleListResponse = try await execute(request)
-
-        guard let rule = response.data.first else {
-            throw UniFiAPIError.notFound
-        }
-        return rule
+        return try await execute(request)
     }
 
-    // MARK: - Update Firewall Rule (session auth)
+    // MARK: - Update Firewall Policy (v2 API)
 
-    func updateFirewallRule(ruleId: String, update: [String: Any]) async throws -> FirewallRuleDTO {
+    func updateFirewallPolicy(policyId: String, update: [String: Any]) async throws -> FirewallPolicyDTO {
         try await ensureLoggedIn()
 
-        let siteName = "default"
-        let urlString = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule/\(ruleId)"
+        let siteName = siteId.isEmpty ? "default" : siteId
+        let urlString = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall-policies/\(policyId)"
 
         guard let url = URL(string: urlString) else {
             throw UniFiAPIError.invalidURL
         }
 
+        logger.info("Updating firewall policy: \(urlString)")
         var request = buildSessionRequest(url: url, method: "PUT")
         request.httpBody = try JSONSerialization.data(withJSONObject: update)
 
-        let response: FirewallRuleListResponse = try await execute(request)
-        guard let rule = response.data.first else {
-            throw UniFiAPIError.notFound
-        }
-        return rule
+        return try await execute(request)
     }
 
-    // MARK: - Toggle Firewall Rule
+    // MARK: - Toggle Firewall Rule Schedule (v2 API)
 
-    func toggleFirewallRule(ruleId: String, enabled: Bool) async throws -> FirewallRuleDTO {
-        // For REST API, we can send just the enabled field
+    /// Toggle between "ALWAYS" (block now) and scheduled mode
+    /// - Parameters:
+    ///   - ruleId: The firewall policy ID
+    ///   - blockNow: If true, sets schedule to ALWAYS. If false, reverts to DAILY with given times.
+    ///   - scheduleStart: Start time for daily schedule (e.g., "23:00")
+    ///   - scheduleEnd: End time for daily schedule (e.g., "07:00")
+    func toggleFirewallSchedule(
+        ruleId: String,
+        blockNow: Bool,
+        scheduleStart: String?,
+        scheduleEnd: String?
+    ) async throws -> FirewallPolicyDTO {
+        var scheduleDict: [String: Any]
+
+        if blockNow {
+            // Set to ALWAYS - blocks immediately
+            scheduleDict = ["mode": "ALWAYS"]
+        } else {
+            // Revert to DAILY schedule with stored times
+            scheduleDict = ["mode": "DAILY"]
+            if let start = scheduleStart {
+                scheduleDict["time_range_start"] = start
+            }
+            if let end = scheduleEnd {
+                scheduleDict["time_range_end"] = end
+            }
+        }
+
+        let update: [String: Any] = ["schedule": scheduleDict]
+        logger.info("Updating firewall schedule: blockNow=\(blockNow), schedule=\(scheduleDict)")
+        return try await updateFirewallPolicy(policyId: ruleId, update: update)
+    }
+
+    /// Legacy toggle for enabled state (kept for backward compatibility)
+    func toggleFirewallRule(ruleId: String, enabled: Bool) async throws -> FirewallPolicyDTO {
         let update: [String: Any] = ["enabled": enabled]
-        return try await updateFirewallRule(ruleId: ruleId, update: update)
+        return try await updateFirewallPolicy(policyId: ruleId, update: update)
     }
 
     // MARK: - Verify Connection
@@ -937,6 +1099,9 @@ final class UniFiAPIService {
             let message = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw UniFiAPIError.badRequest(message)
         case 401:
+            // Session expired - clear it so next ensureLoggedIn() will re-login
+            logger.warning("Got 401 - session expired, clearing session")
+            isLoggedIn = false
             throw UniFiAPIError.unauthorized
         case 404:
             throw UniFiAPIError.notFound

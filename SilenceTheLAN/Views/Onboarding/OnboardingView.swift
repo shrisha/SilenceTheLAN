@@ -826,7 +826,7 @@ struct RuleSelectionCard: View {
 // MARK: - Firewall Rule Selection Card
 
 struct FirewallRuleSelectionCard: View {
-    let rule: FirewallRuleDTO
+    let rule: FirewallPolicyDTO
     let isSelected: Bool
     let onTap: () -> Void
 

@@ -17,7 +17,7 @@ final class SetupViewModel: ObservableObject {
     @Published var discoveredHost: String?
     @Published var availableSites: [UniFiSite] = []
     @Published var availableRules: [ACLRuleDTO] = []
-    @Published var availableFirewallRules: [FirewallRuleDTO] = []
+    @Published var availableFirewallRules: [FirewallPolicyDTO] = []
     @Published var selectedRuleIds: Set<String> = []
     @Published var usingFirewallRules: Bool = true  // Default to firewall rules (REST API)
 
@@ -178,26 +178,19 @@ final class SetupViewModel: ObservableObject {
 
         isLoading = true
         errorMessage = nil
-        usingFirewallRules = false
+        usingFirewallRules = true  // We only use firewall rules now (REST API with session auth)
 
         logger.info("loadRules: Configuring API with host=\(self.host), siteId=\(self.siteId)")
         api.configure(host: host, siteId: siteId)
 
-        var firewallError: String?
-        var aclError: String?
-        var firewallCount = 0
-        var aclCount = 0
-
-        // Try Firewall Rules (REST API) first - this is where most user-created rules live
         do {
-            logger.info("loadRules: Trying Firewall Rules API...")
+            logger.info("loadRules: Fetching firewall rules...")
             let allFirewallRules = try await api.listFirewallRules()
-            firewallCount = allFirewallRules.count
-            logger.info("loadRules: Received \(firewallCount) firewall rules")
+            logger.info("loadRules: Received \(allFirewallRules.count) firewall rules")
 
-            // Log all rule names
+            // Log all rule names for debugging
             for rule in allFirewallRules {
-                logger.debug("loadRules: Firewall rule '\(rule.name)' (enabled: \(rule.enabled), action: \(rule.action))")
+                logger.debug("loadRules: Rule '\(rule.name)' (enabled: \(rule.enabled), action: \(rule.action))")
             }
 
             // Filter to "downtime" rules (case-insensitive)
@@ -205,54 +198,18 @@ final class SetupViewModel: ObservableObject {
                 rule.name.lowercased().hasPrefix("downtime")
             }
 
-            if !availableFirewallRules.isEmpty {
+            if availableFirewallRules.isEmpty {
+                if allFirewallRules.isEmpty {
+                    errorMessage = "No firewall rules found. Make sure you have firewall rules configured in UniFi."
+                } else {
+                    errorMessage = "Found \(allFirewallRules.count) firewall rules, but none with 'downtime' prefix.\n\nRename your rules to start with 'Downtime' (e.g., 'Downtime-Kids')."
+                }
+            } else {
                 logger.info("loadRules: Found \(self.availableFirewallRules.count) 'downtime' firewall rules")
-                usingFirewallRules = true
-                isLoading = false
-                return
             }
-
-            logger.info("loadRules: No 'downtime' firewall rules found in \(firewallCount) total, trying ACL rules...")
         } catch {
-            firewallError = error.localizedDescription
-            logger.warning("loadRules: Firewall API failed: \(firewallError ?? "unknown"), trying ACL rules...")
-        }
-
-        // Fall back to ACL Rules (Integration API)
-        do {
-            logger.info("loadRules: Trying ACL Rules API...")
-            let allRules = try await api.listACLRules()
-            aclCount = allRules.count
-            logger.info("loadRules: Received \(aclCount) ACL rules")
-
-            for rule in allRules {
-                logger.debug("loadRules: ACL rule '\(rule.name)' (enabled: \(rule.enabled), action: \(rule.action))")
-            }
-
-            availableRules = allRules.filter { rule in
-                rule.name.lowercased().hasPrefix("downtime")
-            }
-            logger.info("loadRules: Found \(self.availableRules.count) 'downtime' ACL rules")
-
-        } catch {
-            aclError = error.localizedDescription
-            logger.error("loadRules: ACL API also failed: \(aclError ?? "unknown")")
-        }
-
-        // Build detailed error message
-        if availableRules.isEmpty && availableFirewallRules.isEmpty {
-            var details: [String] = []
-            if let fwErr = firewallError {
-                details.append("Firewall API: \(fwErr)")
-            } else {
-                details.append("Firewall API: \(firewallCount) rules, 0 with 'downtime' prefix")
-            }
-            if let aclErr = aclError {
-                details.append("ACL API: \(aclErr)")
-            } else {
-                details.append("ACL API: \(aclCount) rules, 0 with 'downtime' prefix")
-            }
-            errorMessage = details.joined(separator: "\n")
+            logger.error("loadRules: Firewall API failed: \(error.localizedDescription)")
+            errorMessage = "Failed to load rules: \(error.localizedDescription)"
         }
 
         isLoading = false
@@ -282,7 +239,7 @@ final class SetupViewModel: ObservableObject {
         availableRules.filter { selectedRuleIds.contains($0.id) }
     }
 
-    func getSelectedFirewallRules() -> [FirewallRuleDTO] {
+    func getSelectedFirewallRules() -> [FirewallPolicyDTO] {
         availableFirewallRules.filter { selectedRuleIds.contains($0.id) }
     }
 
