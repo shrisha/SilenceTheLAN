@@ -481,79 +481,140 @@ struct APIKeyStep: View {
 struct SiteIdStep: View {
     @ObservedObject var viewModel: SetupViewModel
     @FocusState private var isSiteIdFieldFocused: Bool
+    @State private var showManualEntry = false
 
     var body: some View {
-        VStack(spacing: 32) {
-            Spacer()
+        ScrollView {
+            VStack(spacing: 32) {
+                Spacer()
+                    .frame(height: 40)
 
-            // Header
-            VStack(spacing: 12) {
-                Image(systemName: "building.2.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.theme.neonPurple, Color.theme.neonBlue],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                // Header
+                VStack(spacing: 12) {
+                    Image(systemName: "building.2.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.theme.neonPurple, Color.theme.neonBlue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .neonGlow(Color.theme.neonPurple, radius: 10)
+                        .neonGlow(Color.theme.neonPurple, radius: 10)
 
-                Text("Site ID")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
+                    Text("Select Site")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
 
-                Text("Enter your UniFi Site UUID")
-                    .font(.subheadline)
-                    .foregroundColor(Color.theme.textSecondary)
-            }
+                    Text(viewModel.availableSites.isEmpty ? "Enter your UniFi Site ID" : "Choose your UniFi site")
+                        .font(.subheadline)
+                        .foregroundColor(Color.theme.textSecondary)
+                }
 
-            // Site ID input
-            VStack(spacing: 16) {
-                TextField("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", text: $viewModel.siteId)
-                    .textFieldStyle(NeonTextFieldStyle())
-                    .autocapitalization(.none)
-                    .autocorrectionDisabled()
-                    .focused($isSiteIdFieldFocused)
+                // Show discovered sites if available
+                if !viewModel.availableSites.isEmpty && !showManualEntry {
+                    VStack(spacing: 12) {
+                        ForEach(viewModel.availableSites) { site in
+                            Button {
+                                viewModel.selectSite(site)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(site.name)
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                        Text(site.id)
+                                            .font(.caption)
+                                            .foregroundColor(Color.theme.textTertiary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer()
+                                    if viewModel.siteId == site.id {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(Color.theme.neonGreen)
+                                    }
+                                }
+                                .padding(16)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(viewModel.siteId == site.id ? Color.theme.neonGreen.opacity(0.1) : Color.theme.surface)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(viewModel.siteId == site.id ? Color.theme.neonGreen.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
 
-                Text("Find this in your UniFi Console URL after /site/")
-                    .font(.caption)
-                    .foregroundColor(Color.theme.textTertiary)
-                    .multilineTextAlignment(.center)
-
-                if let error = viewModel.errorMessage {
-                    Text(error)
+                        Button("Enter manually instead") {
+                            withAnimation {
+                                showManualEntry = true
+                            }
+                        }
                         .font(.caption)
-                        .foregroundColor(Color.theme.neonRed)
-                }
-            }
-            .padding(24)
-            .glassCard()
-
-            Spacer()
-
-            // Navigation
-            HStack(spacing: 16) {
-                Button("Back") {
-                    viewModel.previousStep()
-                }
-                .buttonStyle(.ghost(Color.theme.textSecondary))
-
-                Button("Continue") {
-                    viewModel.nextStep()
-                    Task {
-                        await viewModel.loadRules()
+                        .foregroundColor(Color.theme.textSecondary)
+                        .padding(.top, 8)
                     }
-                }
-                .buttonStyle(.neon(Color.theme.neonGreen))
-                .disabled(viewModel.siteId.isEmpty)
-                .opacity(viewModel.siteId.isEmpty ? 0.5 : 1)
-            }
+                } else {
+                    // Manual entry
+                    VStack(spacing: 16) {
+                        TextField("default or UUID", text: $viewModel.siteId)
+                            .textFieldStyle(NeonTextFieldStyle())
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                            .focused($isSiteIdFieldFocused)
 
-            Spacer()
-                .frame(height: 40)
+                        Text("Try 'default' first, or find the UUID in your UniFi Console URL")
+                            .font(.caption)
+                            .foregroundColor(Color.theme.textTertiary)
+                            .multilineTextAlignment(.center)
+
+                        if let error = viewModel.errorMessage {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(Color.theme.neonRed)
+                        }
+
+                        if !viewModel.availableSites.isEmpty {
+                            Button("Show discovered sites") {
+                                withAnimation {
+                                    showManualEntry = false
+                                }
+                            }
+                            .font(.caption)
+                            .foregroundColor(Color.theme.neonGreen)
+                        }
+                    }
+                    .padding(24)
+                    .glassCard()
+                }
+
+                Spacer()
+
+                // Navigation
+                HStack(spacing: 16) {
+                    Button("Back") {
+                        viewModel.previousStep()
+                    }
+                    .buttonStyle(.ghost(Color.theme.textSecondary))
+
+                    Button("Continue") {
+                        viewModel.nextStep()
+                        Task {
+                            await viewModel.loadRules()
+                        }
+                    }
+                    .buttonStyle(.neon(Color.theme.neonGreen))
+                    .disabled(viewModel.siteId.isEmpty)
+                    .opacity(viewModel.siteId.isEmpty ? 0.5 : 1)
+                }
+
+                Spacer()
+                    .frame(height: 40)
+            }
+            .padding(.horizontal, 32)
         }
-        .padding(.horizontal, 32)
     }
 }
 

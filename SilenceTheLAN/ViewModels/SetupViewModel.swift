@@ -11,6 +11,7 @@ final class SetupViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var discoveredHost: String?
+    @Published var availableSites: [SiteDTO] = []
     @Published var availableRules: [ACLRuleDTO] = []
     @Published var selectedRuleIds: Set<String> = []
 
@@ -24,6 +25,12 @@ final class SetupViewModel: ObservableObject {
     }
 
     private let api = UniFiAPIService()
+
+    // MARK: - Site Selection
+
+    func selectSite(_ site: SiteDTO) {
+        siteId = site.id
+    }
 
     // MARK: - Network Discovery
 
@@ -98,10 +105,15 @@ final class SetupViewModel: ObservableObject {
 
         do {
             try KeychainService.shared.saveAPIKey(apiKey)
-            api.configure(host: host, siteId: "default") // Temporary siteId
 
-            // Try to fetch rules to verify API key works
-            _ = try await api.listACLRules(limit: 1)
+            // Try to fetch available sites
+            let sites = try await api.listSites(host: host)
+            availableSites = sites
+
+            // If only one site, auto-select it
+            if sites.count == 1 {
+                siteId = sites[0].id
+            }
 
             isLoading = false
             return true
@@ -109,13 +121,37 @@ final class SetupViewModel: ObservableObject {
             errorMessage = "Invalid API key"
             try? KeychainService.shared.deleteAPIKey()
         } catch {
-            // Other errors might be siteId related, which is fine for now
+            // Sites endpoint might not exist, continue anyway
+            print("Sites fetch error (non-fatal): \(error)")
             isLoading = false
             return true
         }
 
         isLoading = false
         return false
+    }
+
+    // MARK: - Fetch Sites
+
+    func fetchSites() async {
+        guard !host.isEmpty else { return }
+
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let sites = try await api.listSites(host: host)
+            availableSites = sites
+
+            if sites.count == 1 {
+                siteId = sites[0].id
+            }
+        } catch {
+            print("Failed to fetch sites: \(error)")
+            // Non-fatal - user can enter manually
+        }
+
+        isLoading = false
     }
 
     // MARK: - Load Rules

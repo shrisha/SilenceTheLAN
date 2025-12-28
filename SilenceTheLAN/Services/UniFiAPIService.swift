@@ -1,6 +1,20 @@
 import Foundation
+import OSLog
+
+private let logger = Logger(subsystem: "com.silencetheLAN", category: "UniFiAPI")
 
 // MARK: - API Response Types
+
+struct SiteListResponse: Codable {
+    let data: [SiteDTO]
+}
+
+struct SiteDTO: Codable, Identifiable {
+    let id: String
+    let name: String
+    let description: String?
+    let timezone: String?
+}
 
 struct ACLRuleListResponse: Codable {
     let offset: Int
@@ -144,6 +158,7 @@ enum UniFiAPIError: Error, LocalizedError {
 
 final class UniFiAPIService {
     private let session: URLSession
+    private var host: String = ""
     private var baseURL: String = ""
     private var siteId: String = ""
 
@@ -160,8 +175,26 @@ final class UniFiAPIService {
     }
 
     func configure(host: String, siteId: String) {
+        self.host = host
         self.baseURL = "https://\(host)/proxy/network/integration/v1/sites/\(siteId)"
         self.siteId = siteId
+        logger.info("API configured: host=\(host), siteId=\(siteId)")
+    }
+
+    // MARK: - List Sites (for discovery)
+
+    func listSites(host: String) async throws -> [SiteDTO] {
+        let urlString = "https://\(host)/proxy/network/integration/v1/sites"
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        var request = try buildRequest(url: url, method: "GET")
+        logger.info("Fetching sites from: \(urlString)")
+
+        let response: SiteListResponse = try await execute(request)
+        logger.info("Found \(response.data.count) sites")
+        return response.data
     }
 
     // MARK: - List ACL Rules
@@ -170,7 +203,9 @@ final class UniFiAPIService {
         let url = try buildURL(path: "/acl-rules", query: ["limit": "\(limit)"])
         let request = try buildRequest(url: url, method: "GET")
 
+        logger.info("Fetching ACL rules from: \(url.absoluteString)")
         let response: ACLRuleListResponse = try await execute(request)
+        logger.info("Found \(response.data.count) ACL rules (total: \(response.totalCount))")
         return response.data
     }
 
@@ -265,18 +300,29 @@ final class UniFiAPIService {
         let data: Data
         let response: URLResponse
 
+        logger.debug("Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "nil")")
+
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            logger.error("Network error: \(error.localizedDescription)")
             throw UniFiAPIError.networkError(error)
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            logger.error("Invalid response type")
             throw UniFiAPIError.networkError(
                 NSError(domain: "UniFiAPI", code: -1, userInfo: [
                     NSLocalizedDescriptionKey: "Invalid response type"
                 ])
             )
+        }
+
+        logger.debug("Response: \(httpResponse.statusCode)")
+
+        // Log response body for debugging
+        if let responseString = String(data: data, encoding: .utf8) {
+            logger.debug("Response body: \(responseString.prefix(500))")
         }
 
         switch httpResponse.statusCode {
@@ -285,6 +331,7 @@ final class UniFiAPIService {
                 let decoder = JSONDecoder()
                 return try decoder.decode(T.self, from: data)
             } catch {
+                logger.error("Decoding error: \(error.localizedDescription)")
                 throw UniFiAPIError.decodingError(error)
             }
         case 400:
