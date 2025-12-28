@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		5AD2BB0B2F009C8800B7A6BB /* SilenceTheLAN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SilenceTheLAN.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5AD2BB1E2F00A65300B7A6BB /* CLAUDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CLAUDE.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +33,7 @@
 		5AD2BB022F009C8800B7A6BB = {
 			isa = PBXGroup;
 			children = (
+				5AD2BB1E2F00A65300B7A6BB /* CLAUDE.md */,
 				5AD2BB0D2F009C8800B7A6BB /* SilenceTheLAN */,
 				5AD2BB0C2F009C8800B7A6BB /* Products */,
 			);
