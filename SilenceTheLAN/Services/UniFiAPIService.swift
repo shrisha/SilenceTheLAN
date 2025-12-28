@@ -139,3 +139,163 @@ enum UniFiAPIError: Error, LocalizedError {
         }
     }
 }
+
+// MARK: - API Service
+
+final class UniFiAPIService {
+    private let session: URLSession
+    private var baseURL: String = ""
+    private var siteId: String = ""
+
+    init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+
+        self.session = URLSession(
+            configuration: config,
+            delegate: SSLTrustDelegate(),
+            delegateQueue: nil
+        )
+    }
+
+    func configure(host: String, siteId: String) {
+        self.baseURL = "https://\(host)/proxy/network/integration/v1/sites/\(siteId)"
+        self.siteId = siteId
+    }
+
+    // MARK: - List ACL Rules
+
+    func listACLRules(limit: Int = 200) async throws -> [ACLRuleDTO] {
+        let url = try buildURL(path: "/acl-rules", query: ["limit": "\(limit)"])
+        let request = try buildRequest(url: url, method: "GET")
+
+        let response: ACLRuleListResponse = try await execute(request)
+        return response.data
+    }
+
+    // MARK: - Get Single ACL Rule
+
+    func getACLRule(ruleId: String) async throws -> ACLRuleDTO {
+        let url = try buildURL(path: "/acl-rules/\(ruleId)")
+        let request = try buildRequest(url: url, method: "GET")
+
+        return try await execute(request)
+    }
+
+    // MARK: - Update ACL Rule
+
+    func updateACLRule(ruleId: String, update: ACLRuleUpdateRequest) async throws -> ACLRuleDTO {
+        let url = try buildURL(path: "/acl-rules/\(ruleId)")
+        var request = try buildRequest(url: url, method: "PUT")
+
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(update)
+
+        return try await execute(request)
+    }
+
+    // MARK: - Toggle Rule (Convenience)
+
+    func toggleRule(ruleId: String, enabled: Bool) async throws -> ACLRuleDTO {
+        // GET current state
+        let current = try await getACLRule(ruleId: ruleId)
+
+        // Build update with all required fields
+        let update = ACLRuleUpdateRequest(
+            type: current.type,
+            enabled: enabled,
+            name: current.name,
+            action: current.action,
+            index: current.index,
+            description: current.description,
+            sourceFilter: current.sourceFilter,
+            destinationFilter: current.destinationFilter,
+            protocolFilter: current.protocolFilter,
+            enforcingDeviceFilter: current.enforcingDeviceFilter
+        )
+
+        // PUT updated rule
+        return try await updateACLRule(ruleId: ruleId, update: update)
+    }
+
+    // MARK: - Verify Connection
+
+    func verifyConnection() async throws -> Bool {
+        _ = try await listACLRules(limit: 1)
+        return true
+    }
+
+    // MARK: - Private Helpers
+
+    private func buildURL(path: String, query: [String: String]? = nil) throws -> URL {
+        guard !baseURL.isEmpty else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        var urlString = baseURL + path
+
+        if let query = query, !query.isEmpty {
+            let queryString = query.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
+            urlString += "?\(queryString)"
+        }
+
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        return url
+    }
+
+    private func buildRequest(url: URL, method: String) throws -> URLRequest {
+        guard let apiKey = try? KeychainService.shared.getAPIKey() else {
+            throw UniFiAPIError.noAPIKey
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        return request
+    }
+
+    private func execute<T: Decodable>(_ request: URLRequest) async throws -> T {
+        let data: Data
+        let response: URLResponse
+
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw UniFiAPIError.networkError(error)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw UniFiAPIError.networkError(
+                NSError(domain: "UniFiAPI", code: -1, userInfo: [
+                    NSLocalizedDescriptionKey: "Invalid response type"
+                ])
+            )
+        }
+
+        switch httpResponse.statusCode {
+        case 200...299:
+            do {
+                let decoder = JSONDecoder()
+                return try decoder.decode(T.self, from: data)
+            } catch {
+                throw UniFiAPIError.decodingError(error)
+            }
+        case 400:
+            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw UniFiAPIError.badRequest(message)
+        case 401:
+            throw UniFiAPIError.unauthorized
+        case 404:
+            throw UniFiAPIError.notFound
+        default:
+            throw UniFiAPIError.serverError(httpResponse.statusCode)
+        }
+    }
+}
