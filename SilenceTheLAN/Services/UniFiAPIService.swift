@@ -43,6 +43,105 @@ struct ACLRuleMetadata: Codable {
     let origin: String?
 }
 
+// MARK: - Firewall Rule Types (REST API)
+
+struct FirewallRuleListResponse: Codable {
+    let data: [FirewallRuleDTO]
+    let meta: RESTAPIMeta
+}
+
+struct RESTAPIMeta: Codable {
+    let rc: String
+    let msg: String?
+}
+
+struct FirewallRuleDTO: Codable, Identifiable {
+    let id: String  // "_id" in JSON, mapped via CodingKeys
+    let name: String
+    let enabled: Bool
+    let action: String  // "drop", "accept", "reject"
+    let ruleIndex: Int?
+    let rulesetId: String?  // "WAN_IN", "WAN_OUT", "LAN_IN", etc.
+    let siteId: String?
+
+    // Optional fields for update
+    let srcFirewallGroupIds: [String]?
+    let dstFirewallGroupIds: [String]?
+    let srcAddress: String?
+    let dstAddress: String?
+    let srcNetworkconfId: String?
+    let dstNetworkconfId: String?
+    let srcNetworkconfType: String?
+    let dstNetworkconfType: String?
+    let `protocol`: String?
+    let protocolMatchExcepted: Bool?
+    let icmpTypename: String?
+    let logging: Bool?
+    let stateNew: Bool?
+    let stateEstablished: Bool?
+    let stateInvalid: Bool?
+    let stateRelated: Bool?
+    let ipsecMatchExcepted: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case id = "_id"
+        case name, enabled, action
+        case ruleIndex = "rule_index"
+        case rulesetId = "ruleset"
+        case siteId = "site_id"
+        case srcFirewallGroupIds = "src_firewallgroup_ids"
+        case dstFirewallGroupIds = "dst_firewallgroup_ids"
+        case srcAddress = "src_address"
+        case dstAddress = "dst_address"
+        case srcNetworkconfId = "src_networkconf_id"
+        case dstNetworkconfId = "dst_networkconf_id"
+        case srcNetworkconfType = "src_networkconf_type"
+        case dstNetworkconfType = "dst_networkconf_type"
+        case `protocol`
+        case protocolMatchExcepted = "protocol_match_excepted"
+        case icmpTypename = "icmp_typename"
+        case logging
+        case stateNew = "state_new"
+        case stateEstablished = "state_established"
+        case stateInvalid = "state_invalid"
+        case stateRelated = "state_related"
+        case ipsecMatchExcepted = "ipsec"
+    }
+}
+
+struct FirewallRuleUpdateRequest: Codable {
+    let name: String
+    let enabled: Bool
+    let action: String
+    let ruleIndex: Int?
+    let rulesetId: String?
+    let srcFirewallGroupIds: [String]?
+    let dstFirewallGroupIds: [String]?
+    let srcAddress: String?
+    let dstAddress: String?
+    let srcNetworkconfId: String?
+    let dstNetworkconfId: String?
+    let srcNetworkconfType: String?
+    let dstNetworkconfType: String?
+    let `protocol`: String?
+    let logging: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case name, enabled, action
+        case ruleIndex = "rule_index"
+        case rulesetId = "ruleset"
+        case srcFirewallGroupIds = "src_firewallgroup_ids"
+        case dstFirewallGroupIds = "dst_firewallgroup_ids"
+        case srcAddress = "src_address"
+        case dstAddress = "dst_address"
+        case srcNetworkconfId = "src_networkconf_id"
+        case dstNetworkconfId = "dst_networkconf_id"
+        case srcNetworkconfType = "src_networkconf_type"
+        case dstNetworkconfType = "dst_networkconf_type"
+        case `protocol`, logging
+    }
+}
+
 struct ACLRuleUpdateRequest: Codable {
     let type: String
     let enabled: Bool
@@ -252,6 +351,79 @@ final class UniFiAPIService {
 
         // PUT updated rule
         return try await updateACLRule(ruleId: ruleId, update: update)
+    }
+
+    // MARK: - List Firewall Rules (REST API)
+
+    func listFirewallRules() async throws -> [FirewallRuleDTO] {
+        // REST API uses site name ("default") not UUID
+        // Try to extract site name from the sites list, or use "default"
+        let siteName = "default"
+        let urlString = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule"
+
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        let request = try buildRequest(url: url, method: "GET")
+        logger.info("Fetching firewall rules from: \(urlString)")
+
+        let response: FirewallRuleListResponse = try await execute(request)
+
+        if response.meta.rc != "ok" {
+            logger.error("Firewall rules API error: \(response.meta.msg ?? "unknown")")
+            throw UniFiAPIError.badRequest(response.meta.msg ?? "API returned error")
+        }
+
+        logger.info("Found \(response.data.count) firewall rules")
+        return response.data
+    }
+
+    // MARK: - Get Single Firewall Rule
+
+    func getFirewallRule(ruleId: String) async throws -> FirewallRuleDTO {
+        let siteName = "default"
+        let urlString = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule/\(ruleId)"
+
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        let request = try buildRequest(url: url, method: "GET")
+        let response: FirewallRuleListResponse = try await execute(request)
+
+        guard let rule = response.data.first else {
+            throw UniFiAPIError.notFound
+        }
+        return rule
+    }
+
+    // MARK: - Update Firewall Rule
+
+    func updateFirewallRule(ruleId: String, update: [String: Any]) async throws -> FirewallRuleDTO {
+        let siteName = "default"
+        let urlString = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule/\(ruleId)"
+
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        var request = try buildRequest(url: url, method: "PUT")
+        request.httpBody = try JSONSerialization.data(withJSONObject: update)
+
+        let response: FirewallRuleListResponse = try await execute(request)
+        guard let rule = response.data.first else {
+            throw UniFiAPIError.notFound
+        }
+        return rule
+    }
+
+    // MARK: - Toggle Firewall Rule
+
+    func toggleFirewallRule(ruleId: String, enabled: Bool) async throws -> FirewallRuleDTO {
+        // For REST API, we can send just the enabled field
+        let update: [String: Any] = ["enabled": enabled]
+        return try await updateFirewallRule(ruleId: ruleId, update: update)
     }
 
     // MARK: - Verify Connection

@@ -12,6 +12,7 @@ final class AppState: ObservableObject {
     @Published var errorMessage: String?
     @Published var rules: [ACLRule] = []
     @Published var togglingRuleIds: Set<String> = []
+    @Published var usingFirewallRules = false  // Track which API type
 
     // MARK: - Services
 
@@ -38,12 +39,13 @@ final class AppState: ObservableObject {
            config.isConfigured {
             api.configure(host: config.unifiHost, siteId: config.siteId)
             networkMonitor.configure(host: config.unifiHost)
+            usingFirewallRules = config.usingFirewallRules
             isConfigured = true
             loadCachedRules()
         }
     }
 
-    func saveConfiguration(host: String, siteId: String) {
+    func saveConfiguration(host: String, siteId: String, usingFirewallRules: Bool = false) {
         guard let context = modelContext else { return }
 
         // Delete existing config
@@ -57,6 +59,7 @@ final class AppState: ObservableObject {
             unifiHost: host,
             siteId: siteId,
             isConfigured: true,
+            usingFirewallRules: usingFirewallRules,
             lastUpdated: Date()
         )
         context.insert(config)
@@ -65,6 +68,7 @@ final class AppState: ObservableObject {
 
         api.configure(host: host, siteId: siteId)
         networkMonitor.configure(host: host)
+        self.usingFirewallRules = usingFirewallRules
         isConfigured = true
     }
 
@@ -113,8 +117,13 @@ final class AppState: ObservableObject {
         errorMessage = nil
 
         do {
-            let remoteDTOs = try await api.listACLRules()
-            await updateCachedRules(from: remoteDTOs)
+            if usingFirewallRules {
+                let remoteDTOs = try await api.listFirewallRules()
+                await updateCachedRulesFromFirewall(from: remoteDTOs)
+            } else {
+                let remoteDTOs = try await api.listACLRules()
+                await updateCachedRules(from: remoteDTOs)
+            }
             loadCachedRules()
         } catch {
             errorMessage = error.localizedDescription
@@ -142,6 +151,28 @@ final class AppState: ObservableObject {
                 existing.lastSynced = Date()
             }
             // Don't create new rules here - that's done during selection
+        }
+
+        try? context.save()
+    }
+
+    private func updateCachedRulesFromFirewall(from dtos: [FirewallRuleDTO]) async {
+        guard let context = modelContext else { return }
+
+        for dto in dtos {
+            let ruleId = dto.id
+            let descriptor = FetchDescriptor<ACLRule>(
+                predicate: #Predicate { rule in rule.ruleId == ruleId }
+            )
+
+            if let existing = try? context.fetch(descriptor).first {
+                // Update existing rule
+                existing.isEnabled = dto.enabled
+                existing.name = dto.name
+                existing.action = dto.action
+                existing.index = dto.ruleIndex ?? 0
+                existing.lastSynced = Date()
+            }
         }
 
         try? context.save()
@@ -189,6 +220,35 @@ final class AppState: ObservableObject {
         loadCachedRules()
     }
 
+    func saveSelectedFirewallRules(_ dtos: [FirewallRuleDTO]) {
+        guard let context = modelContext else { return }
+
+        // Clear existing rules
+        let descriptor = FetchDescriptor<ACLRule>()
+        if let existing = try? context.fetch(descriptor) {
+            existing.forEach { context.delete($0) }
+        }
+
+        // Create new selected rules (reuse ACLRule model, just map the fields)
+        for dto in dtos {
+            let rule = ACLRule(
+                ruleId: dto.id,
+                ruleType: "FIREWALL",  // Mark as firewall rule
+                name: dto.name,
+                action: dto.action,
+                index: dto.ruleIndex ?? 0,
+                isEnabled: dto.enabled,
+                ruleDescription: nil,
+                isSelected: true,
+                lastSynced: Date()
+            )
+            context.insert(rule)
+        }
+
+        try? context.save()
+        loadCachedRules()
+    }
+
     // MARK: - Toggle
 
     func toggleRule(_ rule: ACLRule) async {
@@ -206,7 +266,12 @@ final class AppState: ObservableObject {
         generator.impactOccurred()
 
         do {
-            _ = try await api.toggleRule(ruleId: rule.ruleId, enabled: newState)
+            // Use the correct API based on rule type
+            if usingFirewallRules {
+                _ = try await api.toggleFirewallRule(ruleId: rule.ruleId, enabled: newState)
+            } else {
+                _ = try await api.toggleRule(ruleId: rule.ruleId, enabled: newState)
+            }
 
             // Success haptic
             let successGenerator = UINotificationFeedbackGenerator()

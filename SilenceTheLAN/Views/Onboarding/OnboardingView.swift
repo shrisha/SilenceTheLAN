@@ -647,7 +647,7 @@ struct RuleSelectionStep: View {
                     .font(.subheadline)
                     .foregroundColor(Color.theme.textSecondary)
                 Spacer()
-            } else if viewModel.availableRules.isEmpty {
+            } else if !viewModel.hasAvailableRules {
                 Spacer()
                 emptyState
                 Spacer()
@@ -655,14 +655,14 @@ struct RuleSelectionStep: View {
                 // Select all button
                 HStack {
                     Button {
-                        if viewModel.selectedRuleIds.count == viewModel.availableRules.count {
+                        if viewModel.selectedRuleIds.count == viewModel.totalAvailableRulesCount {
                             viewModel.deselectAllRules()
                         } else {
                             viewModel.selectAllRules()
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: viewModel.selectedRuleIds.count == viewModel.availableRules.count ? "checkmark.square.fill" : "square")
+                            Image(systemName: viewModel.selectedRuleIds.count == viewModel.totalAvailableRulesCount ? "checkmark.square.fill" : "square")
                             Text("Select All")
                         }
                         .font(.subheadline)
@@ -675,15 +675,25 @@ struct RuleSelectionStep: View {
                 }
                 .padding(.horizontal, 8)
 
-                // Rules list
+                // Rules list - show firewall or ACL rules
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(viewModel.availableRules, id: \.id) { rule in
-                            RuleSelectionCard(
-                                rule: rule,
-                                isSelected: viewModel.selectedRuleIds.contains(rule.id),
-                                onTap: { viewModel.toggleRuleSelection(rule.id) }
-                            )
+                        if viewModel.usingFirewallRules {
+                            ForEach(viewModel.availableFirewallRules) { rule in
+                                FirewallRuleSelectionCard(
+                                    rule: rule,
+                                    isSelected: viewModel.selectedRuleIds.contains(rule.id),
+                                    onTap: { viewModel.toggleRuleSelection(rule.id) }
+                                )
+                            }
+                        } else {
+                            ForEach(viewModel.availableRules, id: \.id) { rule in
+                                RuleSelectionCard(
+                                    rule: rule,
+                                    isSelected: viewModel.selectedRuleIds.contains(rule.id),
+                                    onTap: { viewModel.toggleRuleSelection(rule.id) }
+                                )
+                            }
                         }
                     }
                     .padding(.bottom, 100)
@@ -700,8 +710,16 @@ struct RuleSelectionStep: View {
                 .buttonStyle(.ghost(Color.theme.textSecondary))
 
                 Button("Finish Setup") {
-                    appState.saveSelectedRules(viewModel.getSelectedRules())
-                    appState.saveConfiguration(host: viewModel.host, siteId: viewModel.siteId)
+                    if viewModel.usingFirewallRules {
+                        appState.saveSelectedFirewallRules(viewModel.getSelectedFirewallRules())
+                    } else {
+                        appState.saveSelectedRules(viewModel.getSelectedRules())
+                    }
+                    appState.saveConfiguration(
+                        host: viewModel.host,
+                        siteId: viewModel.siteId,
+                        usingFirewallRules: viewModel.usingFirewallRules
+                    )
                 }
                 .buttonStyle(.neon(Color.theme.neonGreen))
                 .disabled(viewModel.selectedRuleIds.isEmpty)
@@ -718,14 +736,25 @@ struct RuleSelectionStep: View {
                 .font(.system(size: 50))
                 .foregroundColor(Color.theme.neonRed)
 
-            Text("No Downtime Rules Found")
-                .font(.headline)
-                .foregroundColor(.white)
+            if let error = viewModel.errorMessage {
+                Text("API Error")
+                    .font(.headline)
+                    .foregroundColor(.white)
 
-            Text("Create ACL rules with names starting with \"downtime\" in your UniFi Console")
-                .font(.subheadline)
-                .foregroundColor(Color.theme.textSecondary)
-                .multilineTextAlignment(.center)
+                Text(error)
+                    .font(.subheadline)
+                    .foregroundColor(Color.theme.neonRed)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("No Downtime Rules Found")
+                    .font(.headline)
+                    .foregroundColor(.white)
+
+                Text("Create ACL rules with names starting with \"downtime\" in your UniFi Console")
+                    .font(.subheadline)
+                    .foregroundColor(Color.theme.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
 
             Button("Retry") {
                 Task {
@@ -795,6 +824,74 @@ struct RuleSelectionCard: View {
             return String(name.dropFirst(prefix.count))
         }
         return name
+    }
+}
+
+// MARK: - Firewall Rule Selection Card
+
+struct FirewallRuleSelectionCard: View {
+    let rule: FirewallRuleDTO
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Checkbox
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundColor(isSelected ? Color.theme.neonGreen : Color.theme.textTertiary)
+
+                // Rule info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(displayName(for: rule.name))
+                        .font(.headline)
+                        .foregroundColor(.white)
+
+                    HStack(spacing: 8) {
+                        Text(rule.enabled ? "Active" : "Inactive")
+                            .font(.caption)
+                            .foregroundColor(rule.enabled ? Color.theme.neonGreen : Color.theme.textSecondary)
+
+                        Text("•")
+                            .foregroundColor(Color.theme.textTertiary)
+
+                        Text(actionDisplayName(for: rule.action))
+                            .font(.caption)
+                            .foregroundColor(Color.theme.textSecondary)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? Color.theme.neonGreen.opacity(0.1) : Color.theme.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? Color.theme.neonGreen.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func displayName(for name: String) -> String {
+        let prefix = "downtime-"
+        if name.lowercased().hasPrefix(prefix) {
+            return String(name.dropFirst(prefix.count))
+        }
+        return name
+    }
+
+    private func actionDisplayName(for action: String) -> String {
+        switch action.lowercased() {
+        case "drop": return "BLOCK"
+        case "accept": return "ALLOW"
+        case "reject": return "REJECT"
+        default: return action.uppercased()
+        }
     }
 }
 

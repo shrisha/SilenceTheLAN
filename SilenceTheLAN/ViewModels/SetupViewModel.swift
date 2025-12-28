@@ -1,6 +1,9 @@
 import Foundation
 import SwiftUI
 import Combine
+import OSLog
+
+private let logger = Logger(subsystem: "com.shrisha.SilenceTheLAN", category: "SetupViewModel")
 
 @MainActor
 final class SetupViewModel: ObservableObject {
@@ -13,7 +16,9 @@ final class SetupViewModel: ObservableObject {
     @Published var discoveredHost: String?
     @Published var availableSites: [SiteDTO] = []
     @Published var availableRules: [ACLRuleDTO] = []
+    @Published var availableFirewallRules: [FirewallRuleDTO] = []
     @Published var selectedRuleIds: Set<String> = []
+    @Published var usingFirewallRules: Bool = false  // Track which API we're using
 
     enum SetupStep: CaseIterable {
         case welcome
@@ -158,28 +163,69 @@ final class SetupViewModel: ObservableObject {
 
     func loadRules() async {
         guard !host.isEmpty, !siteId.isEmpty else {
+            logger.error("loadRules: Configuration incomplete - host=\(self.host), siteId=\(self.siteId)")
             errorMessage = "Configuration incomplete"
             return
         }
 
         isLoading = true
         errorMessage = nil
+        usingFirewallRules = false
 
+        logger.info("loadRules: Configuring API with host=\(self.host), siteId=\(self.siteId)")
         api.configure(host: host, siteId: siteId)
 
+        // Try Firewall Rules (REST API) first - this is where most user-created rules live
         do {
-            let allRules = try await api.listACLRules()
+            logger.info("loadRules: Trying Firewall Rules API...")
+            let allFirewallRules = try await api.listFirewallRules()
+            logger.info("loadRules: Received \(allFirewallRules.count) firewall rules")
+
+            // Log all rule names
+            for rule in allFirewallRules {
+                logger.debug("loadRules: Firewall rule '\(rule.name)' (enabled: \(rule.enabled), action: \(rule.action))")
+            }
 
             // Filter to "downtime" rules (case-insensitive)
-            availableRules = allRules.filter { rule in
+            availableFirewallRules = allFirewallRules.filter { rule in
                 rule.name.lowercased().hasPrefix("downtime")
             }
 
-            if availableRules.isEmpty {
+            if !availableFirewallRules.isEmpty {
+                logger.info("loadRules: Found \(self.availableFirewallRules.count) 'downtime' firewall rules")
+                usingFirewallRules = true
+                isLoading = false
+                return
+            }
+
+            logger.info("loadRules: No 'downtime' firewall rules found, trying ACL rules...")
+        } catch {
+            logger.warning("loadRules: Firewall API failed: \(error.localizedDescription), trying ACL rules...")
+        }
+
+        // Fall back to ACL Rules (Integration API)
+        do {
+            logger.info("loadRules: Trying ACL Rules API...")
+            let allRules = try await api.listACLRules()
+            logger.info("loadRules: Received \(allRules.count) ACL rules")
+
+            for rule in allRules {
+                logger.debug("loadRules: ACL rule '\(rule.name)' (enabled: \(rule.enabled), action: \(rule.action))")
+            }
+
+            availableRules = allRules.filter { rule in
+                rule.name.lowercased().hasPrefix("downtime")
+            }
+            logger.info("loadRules: Found \(self.availableRules.count) 'downtime' ACL rules")
+
+            if availableRules.isEmpty && availableFirewallRules.isEmpty {
                 errorMessage = "No rules found with 'downtime' prefix"
             }
         } catch {
-            errorMessage = error.localizedDescription
+            logger.error("loadRules: ACL API also failed: \(error.localizedDescription)")
+            if availableFirewallRules.isEmpty {
+                errorMessage = "Failed to fetch rules: \(error.localizedDescription)"
+            }
         }
 
         isLoading = false
@@ -194,7 +240,11 @@ final class SetupViewModel: ObservableObject {
     }
 
     func selectAllRules() {
-        selectedRuleIds = Set(availableRules.map { $0.id })
+        if usingFirewallRules {
+            selectedRuleIds = Set(availableFirewallRules.map { $0.id })
+        } else {
+            selectedRuleIds = Set(availableRules.map { $0.id })
+        }
     }
 
     func deselectAllRules() {
@@ -203,6 +253,19 @@ final class SetupViewModel: ObservableObject {
 
     func getSelectedRules() -> [ACLRuleDTO] {
         availableRules.filter { selectedRuleIds.contains($0.id) }
+    }
+
+    func getSelectedFirewallRules() -> [FirewallRuleDTO] {
+        availableFirewallRules.filter { selectedRuleIds.contains($0.id) }
+    }
+
+    // Computed property for total available rules count
+    var totalAvailableRulesCount: Int {
+        usingFirewallRules ? availableFirewallRules.count : availableRules.count
+    }
+
+    var hasAvailableRules: Bool {
+        usingFirewallRules ? !availableFirewallRules.isEmpty : !availableRules.isEmpty
     }
 
     // MARK: - Navigation
