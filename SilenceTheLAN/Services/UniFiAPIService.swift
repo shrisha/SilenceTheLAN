@@ -219,12 +219,33 @@ struct AnyCodable: Codable {
     }
 }
 
+// MARK: - REST API Site Types
+
+struct RESTSiteListResponse: Codable {
+    let data: [UniFiSite]
+    let meta: RESTAPIMeta
+}
+
+struct UniFiSite: Codable, Identifiable {
+    let id: String  // "_id" in JSON
+    let name: String
+    let desc: String?
+    let role: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id = "_id"
+        case name, desc, role
+    }
+}
+
 // MARK: - API Errors
 
 enum UniFiAPIError: Error, LocalizedError {
     case invalidURL
     case noAPIKey
+    case noCredentials
     case unauthorized
+    case twoFactorRequired
     case badRequest(String)
     case notFound
     case serverError(Int)
@@ -237,8 +258,12 @@ enum UniFiAPIError: Error, LocalizedError {
             return "Invalid UniFi controller URL"
         case .noAPIKey:
             return "API key not configured"
+        case .noCredentials:
+            return "Credentials not configured"
         case .unauthorized:
-            return "API key is invalid or expired"
+            return "Invalid credentials"
+        case .twoFactorRequired:
+            return "2FA required - please use a local account"
         case .badRequest(let message):
             return "Bad request: \(message)"
         case .notFound:
@@ -253,6 +278,27 @@ enum UniFiAPIError: Error, LocalizedError {
     }
 }
 
+// MARK: - Login Response Types
+
+struct LoginRequest: Codable {
+    let username: String
+    let password: String
+    let token: String
+    let rememberMe: Bool
+
+    init(username: String, password: String) {
+        self.username = username
+        self.password = password
+        self.token = ""  // Empty token for non-2FA login
+        self.rememberMe = true
+    }
+}
+
+struct LoginResponse: Codable {
+    let unique_id: String?
+    let username: String?
+}
+
 // MARK: - API Service
 
 final class UniFiAPIService {
@@ -261,10 +307,20 @@ final class UniFiAPIService {
     private var baseURL: String = ""
     private var siteId: String = ""
 
+    // Session-based auth state
+    private var csrfToken: String?
+    private var sessionCookies: [HTTPCookie] = []
+    private var isLoggedIn: Bool = false
+
     init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
+        // Enable cookie storage for session auth
+        config.httpCookieStorage = HTTPCookieStorage.shared
+        config.httpCookieAcceptPolicy = .always
+        // Try HTTP/1.1 instead of HTTP/2 (might help with SSL issues)
+        config.httpAdditionalHeaders = ["Connection": "keep-alive"]
 
         self.session = URLSession(
             configuration: config,
@@ -280,7 +336,248 @@ final class UniFiAPIService {
         logger.info("API configured: host=\(host), siteId=\(siteId)")
     }
 
-    // MARK: - List Sites (for discovery)
+    // MARK: - Session Login
+
+    /// Clear any existing session state before fresh login
+    private func clearSession() {
+        isLoggedIn = false
+        csrfToken = nil
+        sessionCookies = []
+
+        // Clear cookies for this host
+        if let url = URL(string: "https://\(host)"),
+           let cookies = HTTPCookieStorage.shared.cookies(for: url) {
+            for cookie in cookies {
+                HTTPCookieStorage.shared.deleteCookie(cookie)
+                logger.debug("Cleared cookie: \(cookie.name)")
+            }
+            logger.info("Cleared \(cookies.count) existing cookies")
+        }
+    }
+
+    /// Fetch initial CSRF token and cookies before login
+    private func fetchInitialCSRF() async {
+        // Try to get initial cookies/CSRF by hitting the main page
+        let urlString = "https://\(host)/"
+        guard let url = URL(string: urlString) else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
+
+        logger.info("Fetching initial CSRF/cookies from: \(urlString)")
+
+        do {
+            let (_, response) = try await session.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse {
+                logger.debug("Initial request status: \(httpResponse.statusCode)")
+
+                // Extract CSRF token from headers
+                if let csrf = httpResponse.value(forHTTPHeaderField: "X-CSRF-Token") {
+                    csrfToken = csrf
+                    logger.info("Got CSRF token from initial request header: \(csrf.prefix(20))...")
+                }
+
+                // Store any cookies
+                if let headerFields = httpResponse.allHeaderFields as? [String: String],
+                   let responseURL = httpResponse.url {
+                    let cookies = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: responseURL)
+                    for cookie in cookies {
+                        HTTPCookieStorage.shared.setCookie(cookie)
+                        logger.debug("Got cookie: \(cookie.name)")
+                        if cookie.name == "TOKEN" || cookie.name == "csrf_token" {
+                            csrfToken = cookie.value
+                            logger.info("Got CSRF token from cookie: \(cookie.name)")
+                        }
+                    }
+                }
+            }
+        } catch {
+            logger.warning("Failed to fetch initial CSRF: \(error.localizedDescription)")
+            // Continue anyway - login might still work
+        }
+    }
+
+    /// Simple test to see if we can reach the server at all
+    func testServerReachability() async -> Bool {
+        let urlString = "https://\(host)/"
+        guard let url = URL(string: urlString) else { return false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+
+        do {
+            let (_, response) = try await session.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                logger.info("Test reachability: status \(httpResponse.statusCode)")
+                return true
+            }
+        } catch {
+            logger.error("Test reachability failed: \(error.localizedDescription)")
+        }
+        return false
+    }
+
+    func login(username: String, password: String) async throws {
+        // Clear any stale cookies/session state
+        clearSession()
+
+        // First test if we can reach the server at all
+        let reachable = await testServerReachability()
+        logger.info("Server reachability test: \(reachable)")
+
+        let urlString = "https://\(host)/api/auth/login"
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        // Match exactly what curl sends (which works)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("*/*", forHTTPHeaderField: "Accept")
+        request.setValue("https://\(host)", forHTTPHeaderField: "Origin")
+        // Set User-Agent to match curl (iOS might add its own otherwise)
+        request.setValue("curl/8.7.1", forHTTPHeaderField: "User-Agent")
+
+        // Manually construct JSON to exactly match what curl sends
+        let jsonString = "{\"username\":\"\(username)\",\"password\":\"\(password)\",\"token\":\"\",\"rememberMe\":true}"
+        request.httpBody = jsonString.data(using: .utf8)
+
+        logger.info("Login JSON: \(jsonString)")
+
+        // Log request body for debugging
+        if let bodyData = request.httpBody, let bodyString = String(data: bodyData, encoding: .utf8) {
+            logger.info("Login request body: \(bodyString)")
+            logger.debug("Login request body bytes: \(bodyData.count)")
+        }
+
+        // Log all request headers
+        if let headers = request.allHTTPHeaderFields {
+            for (key, value) in headers {
+                logger.debug("Request header: \(key): \(value)")
+            }
+        }
+
+        // Log cookies being sent
+        if let cookies = HTTPCookieStorage.shared.cookies(for: url) {
+            logger.info("Cookies being sent: \(cookies.count)")
+            for cookie in cookies {
+                logger.debug("Cookie: \(cookie.name)=\(cookie.value.prefix(20))...")
+            }
+        }
+
+        logger.info("Attempting session login to: \(urlString)")
+
+        let data: Data
+        let response: URLResponse
+
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            logger.error("Login network error: \(error.localizedDescription)")
+            throw UniFiAPIError.networkError(error)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw UniFiAPIError.networkError(NSError(domain: "UniFiAPI", code: -1))
+        }
+
+        logger.info("Login response status: \(httpResponse.statusCode)")
+
+        // Log response body for debugging
+        if let responseString = String(data: data, encoding: .utf8) {
+            logger.debug("Login response: \(responseString.prefix(200))")
+        }
+
+        switch httpResponse.statusCode {
+        case 200...299:
+            // Extract CSRF token from response headers
+            if let csrf = httpResponse.value(forHTTPHeaderField: "X-CSRF-Token") {
+                csrfToken = csrf
+                logger.info("Got CSRF token from header")
+            }
+
+            // Store cookies
+            if let headerFields = httpResponse.allHeaderFields as? [String: String],
+               let responseURL = httpResponse.url {
+                let cookies = HTTPCookie.cookies(withResponseHeaderFields: headerFields, for: responseURL)
+                sessionCookies = cookies
+                for cookie in cookies {
+                    HTTPCookieStorage.shared.setCookie(cookie)
+                    if cookie.name == "TOKEN" {
+                        // Some UniFi versions use TOKEN cookie for CSRF
+                        csrfToken = cookie.value
+                        logger.info("Got CSRF token from cookie")
+                    }
+                }
+                logger.info("Stored \(cookies.count) session cookies")
+            }
+
+            isLoggedIn = true
+            logger.info("Session login successful")
+
+        case 401:
+            throw UniFiAPIError.unauthorized
+
+        case 403:
+            // Forbidden - could be wrong credentials, account not enabled, or account permissions
+            let responseString = String(data: data, encoding: .utf8) ?? ""
+            logger.error("Login forbidden (403): \(responseString)")
+
+            // Check if response indicates specific issue
+            if responseString.contains("2fa") || responseString.contains("mfa") {
+                throw UniFiAPIError.twoFactorRequired
+            }
+
+            // 403 often means wrong username/password on UniFi
+            throw UniFiAPIError.unauthorized
+
+        case 499:
+            // 2FA required - check response for confirmation
+            logger.error("2FA required (status 499)")
+            throw UniFiAPIError.twoFactorRequired
+
+        default:
+            // Check if response indicates 2FA requirement
+            if let responseString = String(data: data, encoding: .utf8),
+               responseString.contains("\"required\":\"2fa\"") {
+                logger.error("2FA required (detected in response)")
+                throw UniFiAPIError.twoFactorRequired
+            }
+            throw UniFiAPIError.serverError(httpResponse.statusCode)
+        }
+    }
+
+    func ensureLoggedIn() async throws {
+        guard !isLoggedIn else { return }
+
+        guard let credentials = try? KeychainService.shared.getCredentials() else {
+            logger.warning("No credentials stored, cannot login")
+            throw UniFiAPIError.noCredentials
+        }
+
+        try await login(username: credentials.username, password: credentials.password)
+    }
+
+    // MARK: - List Sites via REST API (session auth)
+
+    func listSitesViaREST() async throws -> [UniFiSite] {
+        let urlString = "https://\(host)/proxy/network/api/self/sites"
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        let request = buildSessionRequest(url: url, method: "GET")
+        logger.info("Fetching sites via REST API: \(urlString)")
+
+        let response: RESTSiteListResponse = try await execute(request)
+        logger.info("Found \(response.data.count) sites via REST API")
+        return response.data
+    }
+
+    // MARK: - List Sites (Integration API - for discovery)
 
     func listSites(host: String) async throws -> [SiteDTO] {
         let urlString = "https://\(host)/proxy/network/integration/v1/sites"
@@ -353,35 +650,147 @@ final class UniFiAPIService {
         return try await updateACLRule(ruleId: ruleId, update: update)
     }
 
-    // MARK: - List Firewall Rules (REST API)
+    // MARK: - List Firewall Rules (REST API with session auth)
 
     func listFirewallRules() async throws -> [FirewallRuleDTO] {
-        // REST API uses site name ("default") not UUID
-        // Try to extract site name from the sites list, or use "default"
         let siteName = "default"
-        let urlString = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule"
+        var allRules: [FirewallRuleDTO] = []
 
-        guard let url = URL(string: urlString) else {
-            throw UniFiAPIError.invalidURL
+        // Try session login first for REST API access
+        try? await ensureLoggedIn()
+
+        // Try all known endpoints and collect results
+
+        // 1. Legacy REST API firewallrule (requires session auth)
+        let legacyUrl = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule"
+        logger.info("Trying legacy firewall rules API (session auth): \(legacyUrl)")
+        if let url = URL(string: legacyUrl) {
+            do {
+                let request = buildSessionRequest(url: url, method: "GET")
+                let response: FirewallRuleListResponse = try await execute(request)
+                if response.meta.rc == "ok" {
+                    logger.info("Legacy API (session) returned \(response.data.count) rules")
+                    allRules.append(contentsOf: response.data)
+                }
+            } catch {
+                logger.warning("Legacy firewall rules failed: \(error.localizedDescription)")
+            }
         }
 
-        let request = try buildRequest(url: url, method: "GET")
-        logger.info("Fetching firewall rules from: \(urlString)")
-
-        let response: FirewallRuleListResponse = try await execute(request)
-
-        if response.meta.rc != "ok" {
-            logger.error("Firewall rules API error: \(response.meta.msg ?? "unknown")")
-            throw UniFiAPIError.badRequest(response.meta.msg ?? "API returned error")
+        // If we got rules from session auth, return them
+        if !allRules.isEmpty {
+            logger.info("Total firewall rules from session auth: \(allRules.count)")
+            return allRules
         }
 
-        logger.info("Found \(response.data.count) firewall rules")
-        return response.data
+        // Fall back to API key auth for other endpoints
+
+        // 2. Zone-based firewall policies (newer UniFi)
+        let policiesUrl = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall/policies"
+        logger.info("Trying firewall policies API: \(policiesUrl)")
+        if let url = URL(string: policiesUrl) {
+            do {
+                let request = try buildRequest(url: url, method: "GET")
+                let response: [FirewallRuleDTO] = try await executeArray(request)
+                logger.info("Policies API returned \(response.count) rules")
+                allRules.append(contentsOf: response)
+            } catch {
+                logger.warning("Firewall policies failed: \(error.localizedDescription)")
+            }
+        }
+
+        // 3. v2 traffic rules
+        let trafficUrl = "https://\(host)/proxy/network/v2/api/site/\(siteName)/trafficrules"
+        logger.info("Trying v2 traffic rules API: \(trafficUrl)")
+        if let url = URL(string: trafficUrl) {
+            do {
+                let request = try buildRequest(url: url, method: "GET")
+                let response: [FirewallRuleDTO] = try await executeArray(request)
+                logger.info("Traffic rules API returned \(response.count) rules")
+                allRules.append(contentsOf: response)
+            } catch {
+                logger.warning("v2 traffic rules failed: \(error.localizedDescription)")
+            }
+        }
+
+        // 4. Try firewall/rules endpoint
+        let rulesUrl = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall/rules"
+        logger.info("Trying firewall rules API: \(rulesUrl)")
+        if let url = URL(string: rulesUrl) {
+            do {
+                let request = try buildRequest(url: url, method: "GET")
+                let response: [FirewallRuleDTO] = try await executeArray(request)
+                logger.info("Firewall rules API returned \(response.count) rules")
+                allRules.append(contentsOf: response)
+            } catch {
+                logger.warning("Firewall rules failed: \(error.localizedDescription)")
+            }
+        }
+
+        // 5. Try Integration API firewall endpoint (with siteId)
+        let integrationFirewallUrl = "https://\(host)/proxy/network/integration/v1/sites/\(siteId)/firewall/policies"
+        logger.info("Trying Integration API firewall: \(integrationFirewallUrl)")
+        if let url = URL(string: integrationFirewallUrl) {
+            do {
+                let request = try buildRequest(url: url, method: "GET")
+                let response: [FirewallRuleDTO] = try await executeArray(request)
+                logger.info("Integration firewall API returned \(response.count) rules")
+                allRules.append(contentsOf: response)
+            } catch {
+                logger.warning("Integration firewall failed: \(error.localizedDescription)")
+            }
+        }
+
+        logger.info("Total firewall rules collected: \(allRules.count)")
+        return allRules
     }
 
-    // MARK: - Get Single Firewall Rule
+    // Execute request expecting array response (for v2 API)
+    private func executeArray<T: Decodable>(_ request: URLRequest) async throws -> [T] {
+        let data: Data
+        let response: URLResponse
+
+        logger.debug("Request: \(request.httpMethod ?? "GET") \(request.url?.absoluteString ?? "nil")")
+
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            logger.error("Network error: \(error.localizedDescription)")
+            throw UniFiAPIError.networkError(error)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw UniFiAPIError.networkError(NSError(domain: "UniFiAPI", code: -1))
+        }
+
+        logger.debug("Response: \(httpResponse.statusCode)")
+
+        if let responseString = String(data: data, encoding: .utf8) {
+            logger.debug("Response body: \(responseString.prefix(500))")
+        }
+
+        switch httpResponse.statusCode {
+        case 200...299:
+            do {
+                return try JSONDecoder().decode([T].self, from: data)
+            } catch {
+                logger.error("Decoding error: \(error.localizedDescription)")
+                throw UniFiAPIError.decodingError(error)
+            }
+        case 401:
+            throw UniFiAPIError.unauthorized
+        case 404:
+            throw UniFiAPIError.notFound
+        default:
+            throw UniFiAPIError.serverError(httpResponse.statusCode)
+        }
+    }
+
+    // MARK: - Get Single Firewall Rule (session auth)
 
     func getFirewallRule(ruleId: String) async throws -> FirewallRuleDTO {
+        try await ensureLoggedIn()
+
         let siteName = "default"
         let urlString = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule/\(ruleId)"
 
@@ -389,7 +798,7 @@ final class UniFiAPIService {
             throw UniFiAPIError.invalidURL
         }
 
-        let request = try buildRequest(url: url, method: "GET")
+        let request = buildSessionRequest(url: url, method: "GET")
         let response: FirewallRuleListResponse = try await execute(request)
 
         guard let rule = response.data.first else {
@@ -398,9 +807,11 @@ final class UniFiAPIService {
         return rule
     }
 
-    // MARK: - Update Firewall Rule
+    // MARK: - Update Firewall Rule (session auth)
 
     func updateFirewallRule(ruleId: String, update: [String: Any]) async throws -> FirewallRuleDTO {
+        try await ensureLoggedIn()
+
         let siteName = "default"
         let urlString = "https://\(host)/proxy/network/api/s/\(siteName)/rest/firewallrule/\(ruleId)"
 
@@ -408,7 +819,7 @@ final class UniFiAPIService {
             throw UniFiAPIError.invalidURL
         }
 
-        var request = try buildRequest(url: url, method: "PUT")
+        var request = buildSessionRequest(url: url, method: "PUT")
         request.httpBody = try JSONSerialization.data(withJSONObject: update)
 
         let response: FirewallRuleListResponse = try await execute(request)
@@ -464,6 +875,22 @@ final class UniFiAPIService {
         request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        return request
+    }
+
+    private func buildSessionRequest(url: URL, method: String) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        // Add CSRF token if available
+        if let csrf = csrfToken {
+            request.setValue(csrf, forHTTPHeaderField: "X-CSRF-Token")
+        }
+
+        // Cookies are automatically attached by HTTPCookieStorage
 
         return request
     }

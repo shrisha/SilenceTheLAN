@@ -9,21 +9,22 @@ private let logger = Logger(subsystem: "com.shrisha.SilenceTheLAN", category: "S
 final class SetupViewModel: ObservableObject {
     @Published var currentStep: SetupStep = .welcome
     @Published var host: String = ""
-    @Published var apiKey: String = ""
+    @Published var username: String = ""
+    @Published var password: String = ""
     @Published var siteId: String = ""
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var discoveredHost: String?
-    @Published var availableSites: [SiteDTO] = []
+    @Published var availableSites: [UniFiSite] = []
     @Published var availableRules: [ACLRuleDTO] = []
     @Published var availableFirewallRules: [FirewallRuleDTO] = []
     @Published var selectedRuleIds: Set<String> = []
-    @Published var usingFirewallRules: Bool = false  // Track which API we're using
+    @Published var usingFirewallRules: Bool = true  // Default to firewall rules (REST API)
 
     enum SetupStep: CaseIterable {
         case welcome
         case discovery
-        case apiKey
+        case credentials  // Username/password for LOCAL account
         case siteId
         case ruleSelection
         case complete
@@ -33,8 +34,8 @@ final class SetupViewModel: ObservableObject {
 
     // MARK: - Site Selection
 
-    func selectSite(_ site: SiteDTO) {
-        siteId = site.id
+    func selectSite(_ site: UniFiSite) {
+        siteId = site.name  // REST API uses site name, not UUID
     }
 
     // MARK: - Network Discovery
@@ -97,11 +98,11 @@ final class SetupViewModel: ObservableObject {
         return false
     }
 
-    // MARK: - API Key Verification
+    // MARK: - Credentials Verification (Local Account Auth)
 
-    func verifyAPIKey() async -> Bool {
-        guard !host.isEmpty, !apiKey.isEmpty else {
-            errorMessage = "Please enter host and API key"
+    func verifyCredentials() async -> Bool {
+        guard !host.isEmpty, !username.isEmpty, !password.isEmpty else {
+            errorMessage = "Please enter host, username, and password"
             return false
         }
 
@@ -109,27 +110,33 @@ final class SetupViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            try KeychainService.shared.saveAPIKey(apiKey)
+            // Configure API with host
+            api.configure(host: host, siteId: "default")
 
-            // Try to fetch available sites
-            let sites = try await api.listSites(host: host)
+            // Try to login
+            try await api.login(username: username, password: password)
+
+            // Save credentials on success
+            try KeychainService.shared.saveCredentials(username: username, password: password)
+
+            // Fetch available sites after successful login
+            let sites = try await api.listSitesViaREST()
             availableSites = sites
 
             // If only one site, auto-select it
             if sites.count == 1 {
-                siteId = sites[0].id
+                siteId = sites[0].name
             }
 
+            logger.info("Login successful, found \(sites.count) sites")
             isLoading = false
             return true
         } catch UniFiAPIError.unauthorized {
-            errorMessage = "Invalid API key"
-            try? KeychainService.shared.deleteAPIKey()
+            errorMessage = "Invalid username or password"
+        } catch UniFiAPIError.twoFactorRequired {
+            errorMessage = "2FA is enabled on this account. Please create a LOCAL admin account without 2FA for API access."
         } catch {
-            // Sites endpoint might not exist, continue anyway
-            print("Sites fetch error (non-fatal): \(error)")
-            isLoading = false
-            return true
+            errorMessage = "Login failed: \(error.localizedDescription)"
         }
 
         isLoading = false
@@ -145,11 +152,12 @@ final class SetupViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            let sites = try await api.listSites(host: host)
+            try await api.ensureLoggedIn()
+            let sites = try await api.listSitesViaREST()
             availableSites = sites
 
             if sites.count == 1 {
-                siteId = sites[0].id
+                siteId = sites[0].name
             }
         } catch {
             print("Failed to fetch sites: \(error)")
@@ -175,11 +183,17 @@ final class SetupViewModel: ObservableObject {
         logger.info("loadRules: Configuring API with host=\(self.host), siteId=\(self.siteId)")
         api.configure(host: host, siteId: siteId)
 
+        var firewallError: String?
+        var aclError: String?
+        var firewallCount = 0
+        var aclCount = 0
+
         // Try Firewall Rules (REST API) first - this is where most user-created rules live
         do {
             logger.info("loadRules: Trying Firewall Rules API...")
             let allFirewallRules = try await api.listFirewallRules()
-            logger.info("loadRules: Received \(allFirewallRules.count) firewall rules")
+            firewallCount = allFirewallRules.count
+            logger.info("loadRules: Received \(firewallCount) firewall rules")
 
             // Log all rule names
             for rule in allFirewallRules {
@@ -198,16 +212,18 @@ final class SetupViewModel: ObservableObject {
                 return
             }
 
-            logger.info("loadRules: No 'downtime' firewall rules found, trying ACL rules...")
+            logger.info("loadRules: No 'downtime' firewall rules found in \(firewallCount) total, trying ACL rules...")
         } catch {
-            logger.warning("loadRules: Firewall API failed: \(error.localizedDescription), trying ACL rules...")
+            firewallError = error.localizedDescription
+            logger.warning("loadRules: Firewall API failed: \(firewallError ?? "unknown"), trying ACL rules...")
         }
 
         // Fall back to ACL Rules (Integration API)
         do {
             logger.info("loadRules: Trying ACL Rules API...")
             let allRules = try await api.listACLRules()
-            logger.info("loadRules: Received \(allRules.count) ACL rules")
+            aclCount = allRules.count
+            logger.info("loadRules: Received \(aclCount) ACL rules")
 
             for rule in allRules {
                 logger.debug("loadRules: ACL rule '\(rule.name)' (enabled: \(rule.enabled), action: \(rule.action))")
@@ -218,14 +234,25 @@ final class SetupViewModel: ObservableObject {
             }
             logger.info("loadRules: Found \(self.availableRules.count) 'downtime' ACL rules")
 
-            if availableRules.isEmpty && availableFirewallRules.isEmpty {
-                errorMessage = "No rules found with 'downtime' prefix"
-            }
         } catch {
-            logger.error("loadRules: ACL API also failed: \(error.localizedDescription)")
-            if availableFirewallRules.isEmpty {
-                errorMessage = "Failed to fetch rules: \(error.localizedDescription)"
+            aclError = error.localizedDescription
+            logger.error("loadRules: ACL API also failed: \(aclError ?? "unknown")")
+        }
+
+        // Build detailed error message
+        if availableRules.isEmpty && availableFirewallRules.isEmpty {
+            var details: [String] = []
+            if let fwErr = firewallError {
+                details.append("Firewall API: \(fwErr)")
+            } else {
+                details.append("Firewall API: \(firewallCount) rules, 0 with 'downtime' prefix")
             }
+            if let aclErr = aclError {
+                details.append("ACL API: \(aclErr)")
+            } else {
+                details.append("ACL API: \(aclCount) rules, 0 with 'downtime' prefix")
+            }
+            errorMessage = details.joined(separator: "\n")
         }
 
         isLoading = false

@@ -28,8 +28,8 @@ struct OnboardingView: View {
                     HostDiscoveryStep(viewModel: viewModel)
                         .tag(SetupViewModel.SetupStep.discovery)
 
-                    APIKeyStep(viewModel: viewModel)
-                        .tag(SetupViewModel.SetupStep.apiKey)
+                    CredentialsStep(viewModel: viewModel)
+                        .tag(SetupViewModel.SetupStep.credentials)
 
                     SiteIdStep(viewModel: viewModel)
                         .tag(SetupViewModel.SetupStep.siteId)
@@ -340,12 +340,15 @@ struct HostDiscoveryStep: View {
     }
 }
 
-// MARK: - API Key Step
+// MARK: - Credentials Step (Username/Password for REST API)
 
-struct APIKeyStep: View {
+struct CredentialsStep: View {
     @ObservedObject var viewModel: SetupViewModel
-    @State private var showInstructions = false
-    @FocusState private var isKeyFieldFocused: Bool
+    @FocusState private var focusedField: Field?
+
+    enum Field {
+        case username, password
+    }
 
     var body: some View {
         ScrollView {
@@ -355,31 +358,52 @@ struct APIKeyStep: View {
 
                 // Header
                 VStack(spacing: 12) {
-                    Image(systemName: "key.fill")
+                    Image(systemName: "person.badge.key.fill")
                         .font(.system(size: 40))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.theme.neonGreen, Color.theme.neonBlue],
+                                colors: [Color.theme.neonPurple, Color.theme.neonBlue],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .neonGlow(Color.theme.neonGreen, radius: 10)
+                        .neonGlow(Color.theme.neonPurple, radius: 10)
 
-                    Text("API Key")
+                    Text("Local Admin Login")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
 
-                    Text("Enter your UniFi API key")
+                    Text("Enter your UniFi local admin credentials")
                         .font(.subheadline)
                         .foregroundColor(Color.theme.textSecondary)
+                        .multilineTextAlignment(.center)
                 }
 
-                // API Key input
+                // Credentials input
                 VStack(spacing: 16) {
-                    SecureField("Paste your API key", text: $viewModel.apiKey)
-                        .textFieldStyle(NeonTextFieldStyle())
-                        .focused($isKeyFieldFocused)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Username")
+                            .font(.caption)
+                            .foregroundColor(Color.theme.textSecondary)
+
+                        TextField("admin@example.com", text: $viewModel.username)
+                            .textFieldStyle(NeonTextFieldStyle())
+                            .textContentType(.username)
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                            .focused($focusedField, equals: .username)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Password")
+                            .font(.caption)
+                            .foregroundColor(Color.theme.textSecondary)
+
+                        SecureField("Password", text: $viewModel.password)
+                            .textFieldStyle(NeonTextFieldStyle())
+                            .textContentType(.password)
+                            .focused($focusedField, equals: .password)
+                    }
 
                     if let error = viewModel.errorMessage {
                         HStack {
@@ -393,35 +417,22 @@ struct APIKeyStep: View {
                 .padding(24)
                 .glassCard()
 
-                // Instructions toggle
-                VStack(spacing: 16) {
-                    Button {
-                        withAnimation(.spring(response: 0.4)) {
-                            showInstructions.toggle()
-                        }
-                    } label: {
-                        HStack {
-                            Image(systemName: "questionmark.circle")
-                            Text("How to get an API key")
-                            Spacer()
-                            Image(systemName: showInstructions ? "chevron.up" : "chevron.down")
-                        }
-                        .font(.subheadline)
-                        .foregroundColor(Color.theme.neonBlue)
+                // Info box
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(Color.theme.neonBlue)
+                        Text("Local Account Required")
+                            .font(.subheadline.bold())
+                            .foregroundColor(.white)
                     }
 
-                    if showInstructions {
-                        VStack(alignment: .leading, spacing: 12) {
-                            instructionStep(1, "Open your UniFi Console")
-                            instructionStep(2, "Go to Settings → Integrations")
-                            instructionStep(3, "Click \"Create New API Key\"")
-                            instructionStep(4, "Copy the key and paste it above")
-                        }
-                        .padding(.top, 8)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
+                    Text("Create a local admin account in UniFi Console (Settings → Admins → Add Admin → Local Access Only). Cloud/SSO accounts with 2FA cannot be used for API access.")
+                        .font(.caption)
+                        .foregroundColor(Color.theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(20)
+                .padding(16)
                 .glassCard()
 
                 Spacer()
@@ -435,7 +446,7 @@ struct APIKeyStep: View {
 
                     Button {
                         Task {
-                            if await viewModel.verifyAPIKey() {
+                            if await viewModel.verifyCredentials() {
                                 viewModel.nextStep()
                             }
                         }
@@ -448,8 +459,8 @@ struct APIKeyStep: View {
                         }
                     }
                     .buttonStyle(.neon(Color.theme.neonGreen))
-                    .disabled(viewModel.apiKey.isEmpty || viewModel.isLoading)
-                    .opacity(viewModel.apiKey.isEmpty ? 0.5 : 1)
+                    .disabled(viewModel.username.isEmpty || viewModel.password.isEmpty || viewModel.isLoading)
+                    .opacity((viewModel.username.isEmpty || viewModel.password.isEmpty) ? 0.5 : 1)
                 }
 
                 Spacer()
@@ -458,21 +469,6 @@ struct APIKeyStep: View {
             .padding(.horizontal, 32)
         }
         .scrollDismissesKeyboard(.interactively)
-    }
-
-    private func instructionStep(_ number: Int, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text("\(number)")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(.black)
-                .frame(width: 20, height: 20)
-                .background(Circle().fill(Color.theme.neonGreen))
-
-            Text(text)
-                .font(.subheadline)
-                .foregroundColor(Color.theme.textSecondary)
-        }
     }
 }
 
@@ -520,16 +516,16 @@ struct SiteIdStep: View {
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(site.name)
+                                        Text(site.desc ?? site.name)
                                             .font(.headline)
                                             .foregroundColor(.white)
-                                        Text(site.id)
+                                        Text(site.name)
                                             .font(.caption)
                                             .foregroundColor(Color.theme.textTertiary)
                                             .lineLimit(1)
                                     }
                                     Spacer()
-                                    if viewModel.siteId == site.id {
+                                    if viewModel.siteId == site.name {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundColor(Color.theme.neonGreen)
                                     }
@@ -537,11 +533,11 @@ struct SiteIdStep: View {
                                 .padding(16)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .fill(viewModel.siteId == site.id ? Color.theme.neonGreen.opacity(0.1) : Color.theme.surface)
+                                        .fill(viewModel.siteId == site.name ? Color.theme.neonGreen.opacity(0.1) : Color.theme.surface)
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .stroke(viewModel.siteId == site.id ? Color.theme.neonGreen.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
+                                        .stroke(viewModel.siteId == site.name ? Color.theme.neonGreen.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
                                 )
                             }
                             .buttonStyle(.plain)
