@@ -3,6 +3,7 @@ import SwiftUI
 import SwiftData
 import Combine
 import os.log
+import AppIntents
 
 private let logger = Logger(subsystem: "com.silencethelan", category: "AppState")
 
@@ -201,6 +202,9 @@ final class AppState: ObservableObject {
             }
             loadCachedRules()
             logger.info("refreshRules: Completed successfully, \(self.rules.count) rules loaded")
+
+            // Update Siri shortcut parameters with current person/activity names
+            SilenceTheLANShortcuts.updateAppShortcutParameters()
         } catch {
             let errorDesc = error.localizedDescription.lowercased()
             // Don't show "cancelled" errors to user - these happen during normal navigation
@@ -377,6 +381,9 @@ final class AppState: ObservableObject {
         try? context.save()
         loadCachedRules()
         logger.info("saveSelectedFirewallRules: Completed, \(self.rules.count) rules now in memory")
+
+        // Update Siri shortcut parameters with new person/activity names
+        SilenceTheLANShortcuts.updateAppShortcutParameters()
     }
 
     // MARK: - Add/Remove Individual Rules
