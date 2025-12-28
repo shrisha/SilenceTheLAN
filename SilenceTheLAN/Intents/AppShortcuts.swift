@@ -24,22 +24,9 @@ struct SilenceTheLANShortcuts: AppShortcutsProvider {
             systemImageName: "hand.thumbsup.fill"
         )
 
-        AppShortcut(
-            intent: BlockActivityIntent(),
-            phrases: [
-                "Block \(\.$person)'s \(\.$activity) in \(.applicationName)"
-            ],
-            shortTitle: "Block Activity",
-            systemImageName: "xmark.circle.fill"
-        )
-
-        AppShortcut(
-            intent: AllowActivityIntent(),
-            phrases: [
-                "Allow \(\.$person)'s \(\.$activity) in \(.applicationName)"
-            ],
-            shortTitle: "Allow Activity",
-            systemImageName: "checkmark.circle.fill"
-        )
+        // Note: Activity shortcuts (BlockActivityIntent, AllowActivityIntent) are available
+        // through the Shortcuts app but not via direct Siri phrases, as App Shortcuts
+        // only support single-parameter phrases. Users can create custom Siri shortcuts
+        // in the Shortcuts app for specific activity rules.
     }
 }
