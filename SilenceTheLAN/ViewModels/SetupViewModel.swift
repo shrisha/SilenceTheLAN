@@ -193,19 +193,28 @@ final class SetupViewModel: ObservableObject {
                 logger.debug("loadRules: Rule '\(rule.name)' (enabled: \(rule.enabled), action: \(rule.action))")
             }
 
-            // Filter to "downtime" rules (case-insensitive)
+            // Filter to "downtime" BLOCK rules (case-insensitive)
+            // Only show rules that block traffic - this is what we want to toggle
+            let blockingActions = ["BLOCK", "DROP", "REJECT"]
             availableFirewallRules = allFirewallRules.filter { rule in
-                rule.name.lowercased().hasPrefix("downtime")
+                rule.name.lowercased().hasPrefix("downtime") &&
+                blockingActions.contains(rule.action.uppercased())
             }
 
             if availableFirewallRules.isEmpty {
                 if allFirewallRules.isEmpty {
                     errorMessage = "No firewall rules found. Make sure you have firewall rules configured in UniFi."
                 } else {
-                    errorMessage = "Found \(allFirewallRules.count) firewall rules, but none with 'downtime' prefix.\n\nRename your rules to start with 'Downtime' (e.g., 'Downtime-Kids')."
+                    // Check if there are downtime rules but they're not BLOCK rules
+                    let downtimeRules = allFirewallRules.filter { $0.name.lowercased().hasPrefix("downtime") }
+                    if downtimeRules.isEmpty {
+                        errorMessage = "Found \(allFirewallRules.count) firewall rules, but none with 'downtime' prefix.\n\nCreate rules starting with 'Downtime' (e.g., 'Downtime-Kids') that BLOCK traffic."
+                    } else {
+                        errorMessage = "Found \(downtimeRules.count) 'downtime' rules, but none are BLOCK rules.\n\nMake sure your Downtime rules have action set to BLOCK."
+                    }
                 }
             } else {
-                logger.info("loadRules: Found \(self.availableFirewallRules.count) 'downtime' firewall rules")
+                logger.info("loadRules: Found \(self.availableFirewallRules.count) 'downtime' BLOCK firewall rules")
             }
         } catch {
             logger.error("loadRules: Firewall API failed: \(error.localizedDescription)")

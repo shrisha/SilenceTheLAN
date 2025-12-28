@@ -312,8 +312,8 @@ struct RuleCard: View {
 
                 Spacer()
 
-                // Toggle switch - ON means "Block Now" override is active
-                CustomToggle(isOn: rule.isOverrideActive, color: Color.theme.neonRed)
+                // Toggle switch - ON means traffic is currently blocked
+                CustomToggle(isOn: rule.isCurrentlyBlocking, color: Color.theme.neonRed)
             }
             .padding(20)
             .background(

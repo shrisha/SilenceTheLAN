@@ -392,27 +392,24 @@ final class AppState: ObservableObject {
     // MARK: - Toggle
 
     /// Toggle the rule's blocking state
-    /// For firewall rules: toggles between ALWAYS (block now) and scheduled mode
+    /// - If currently blocking → Pause (enabled=false) to allow traffic
+    /// - If not blocking:
+    ///   - If paused → Unpause (enabled=true) to restore schedule behavior
+    ///   - If outside schedule → Block Now (set schedule to ALWAYS)
     func toggleRule(_ rule: ACLRule) async {
         guard !togglingRuleIds.contains(rule.ruleId) else { return }
 
-        // For firewall rules, toggle = switch between ALWAYS and scheduled mode
-        let wasOverrideActive = rule.isOverrideActive
-        let newOverrideState = !wasOverrideActive
+        let isCurrentlyBlocking = rule.isCurrentlyBlocking
+        let isPaused = !rule.isEnabled
 
         // Store previous state for rollback
+        let previousEnabled = rule.isEnabled
         let previousScheduleMode = rule.scheduleMode
 
-        // Before toggling to ALWAYS, save current schedule times as original (if we have them)
-        if newOverrideState && rule.scheduleStart != nil && rule.scheduleEnd != nil {
-            rule.originalScheduleStart = rule.scheduleStart
-            rule.originalScheduleEnd = rule.scheduleEnd
-            logger.info("Saved original schedule: \(rule.scheduleStart ?? "nil") - \(rule.scheduleEnd ?? "nil")")
-        }
+        logger.info("Toggle: isCurrentlyBlocking=\(isCurrentlyBlocking), isPaused=\(isPaused), scheduleMode=\(rule.scheduleMode)")
 
         // Optimistic update
         togglingRuleIds.insert(rule.ruleId)
-        rule.scheduleMode = newOverrideState ? "ALWAYS" : "EVERY_DAY"
 
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .medium)
@@ -420,24 +417,35 @@ final class AppState: ObservableObject {
 
         do {
             if usingFirewallRules {
-                // Use original schedule times when toggling back from ALWAYS
-                let scheduleStart = rule.originalScheduleStart ?? rule.scheduleStart
-                let scheduleEnd = rule.originalScheduleEnd ?? rule.scheduleEnd
+                if isCurrentlyBlocking {
+                    // Currently blocking → Pause to allow traffic
+                    logger.info("Action: PAUSE (allow traffic)")
+                    rule.isEnabled = false
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
+                } else if isPaused {
+                    // Currently paused → Unpause to restore schedule behavior
+                    logger.info("Action: UNPAUSE (restore schedule)")
+                    rule.isEnabled = true
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
+                } else {
+                    // Outside schedule window → Block Now (set to ALWAYS)
+                    logger.info("Action: BLOCK NOW (set ALWAYS)")
 
-                logger.info("Toggle: blockNow=\(newOverrideState), scheduleStart=\(scheduleStart ?? "nil"), scheduleEnd=\(scheduleEnd ?? "nil")")
+                    // Preserve original schedule before changing to ALWAYS
+                    if rule.scheduleMode.uppercased() != "ALWAYS" &&
+                       rule.scheduleStart != nil && rule.scheduleEnd != nil {
+                        rule.originalScheduleStart = rule.scheduleStart
+                        rule.originalScheduleEnd = rule.scheduleEnd
+                        logger.info("Preserved original schedule: \(rule.scheduleStart ?? "nil") - \(rule.scheduleEnd ?? "nil")")
+                    }
 
-                // Use schedule-based toggle for firewall rules
-                _ = try await api.toggleFirewallSchedule(
-                    ruleId: rule.ruleId,
-                    blockNow: newOverrideState,
-                    scheduleStart: scheduleStart,
-                    scheduleEnd: scheduleEnd
-                )
-
-                // Update local schedule times if we restored them
-                if !newOverrideState {
-                    rule.scheduleStart = scheduleStart
-                    rule.scheduleEnd = scheduleEnd
+                    rule.scheduleMode = "ALWAYS"
+                    _ = try await api.toggleFirewallSchedule(
+                        ruleId: rule.ruleId,
+                        blockNow: true,
+                        scheduleStart: rule.originalScheduleStart ?? rule.scheduleStart,
+                        scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
+                    )
                 }
             } else {
                 // Legacy ACL rules use enabled toggle
@@ -454,6 +462,7 @@ final class AppState: ObservableObject {
 
         } catch {
             // Revert on failure
+            rule.isEnabled = previousEnabled
             rule.scheduleMode = previousScheduleMode
 
             // Error haptic

@@ -1098,6 +1098,46 @@ final class UniFiAPIService {
         return try await updateFirewallPolicy(policyId: ruleId, update: update)
     }
 
+    // MARK: - Pause/Unpause Firewall Rule
+
+    /// Pause or unpause a firewall rule using the batch endpoint
+    /// This is the cleanest way to temporarily disable a rule without modifying its schedule
+    func pauseFirewallRule(ruleId: String, paused: Bool) async throws -> FirewallPolicyDTO {
+        try await ensureLoggedIn()
+
+        let siteName = siteId.isEmpty ? "default" : siteId
+        let urlString = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall-policies/batch"
+
+        guard let url = URL(string: urlString) else {
+            throw UniFiAPIError.invalidURL
+        }
+
+        // Batch endpoint expects an array of updates
+        let updates: [[String: Any]] = [
+            ["_id": ruleId, "enabled": !paused]
+        ]
+
+        logger.info("Pause/unpause firewall rule: ruleId=\(ruleId), paused=\(paused)")
+
+        var request = buildSessionRequest(url: url, method: "PUT")
+        request.httpBody = try JSONSerialization.data(withJSONObject: updates)
+
+        // Log request
+        if let bodyData = request.httpBody, let bodyString = String(data: bodyData, encoding: .utf8) {
+            logger.info("Batch update body: \(bodyString)")
+        }
+
+        // Execute and parse response (batch returns array)
+        let results: [FirewallPolicyDTO] = try await executeArray(request)
+
+        guard let result = results.first else {
+            throw UniFiAPIError.notFound
+        }
+
+        logger.info("Pause/unpause successful: enabled=\(result.enabled)")
+        return result
+    }
+
     // MARK: - Verify Connection
 
     func verifyConnection() async throws -> Bool {

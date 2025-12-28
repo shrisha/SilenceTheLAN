@@ -217,7 +217,7 @@ struct ManageRulesView: View {
                 .font(.headline)
                 .foregroundColor(.white)
 
-            Text("Create firewall rules with names starting with \"Downtime\" in your UniFi Console")
+            Text("Create firewall rules in UniFi that start with \"Downtime\" and have action set to BLOCK")
                 .font(.subheadline)
                 .foregroundColor(Color.theme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -238,9 +238,11 @@ struct ManageRulesView: View {
     }
 
     private var unmangedRules: [FirewallPolicyDTO] {
-        availableRules.filter { dto in
+        let blockingActions = ["BLOCK", "DROP", "REJECT"]
+        return availableRules.filter { dto in
             !managedRuleIds.contains(dto.id) &&
-            dto.name.lowercased().contains("downtime")
+            dto.name.lowercased().contains("downtime") &&
+            blockingActions.contains(dto.action.uppercased())
         }
     }
 

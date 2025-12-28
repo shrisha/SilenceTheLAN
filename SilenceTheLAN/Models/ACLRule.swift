@@ -54,6 +54,8 @@ final class ACLRule {
     var isCurrentlyBlocking: Bool {
         // UniFi API uses "DROP" for blocking, ACL rules use "BLOCK"
         let isBlockingAction = ["BLOCK", "DROP", "REJECT"].contains(action.uppercased())
+
+        // If rule is disabled (paused), it's not blocking
         guard isEnabled && isBlockingAction else { return false }
 
         switch scheduleMode.uppercased() {
@@ -72,9 +74,20 @@ final class ACLRule {
 
     /// Human-readable schedule summary
     var scheduleSummary: String {
+        // Check if paused first
+        if !isEnabled {
+            if let start = scheduleStart, let end = scheduleEnd {
+                return "Paused (normally \(formatTime(start)) - \(formatTime(end)))"
+            }
+            return "Paused"
+        }
+
         switch scheduleMode.uppercased() {
         case "ALWAYS":
-            return "Manual override active"
+            if let start = originalScheduleStart, let end = originalScheduleEnd {
+                return "Blocking (normally \(formatTime(start)) - \(formatTime(end)))"
+            }
+            return "Blocking (override)"
         case "DAILY", "CUSTOM", "EVERY_DAY":
             // UniFi API uses various mode names for daily schedules
             if let start = scheduleStart, let end = scheduleEnd {
