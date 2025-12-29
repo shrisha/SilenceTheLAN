@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // MARK: - Rule Group Model
 
@@ -24,6 +25,7 @@ struct DashboardView: View {
     @EnvironmentObject var appState: AppState
     @State private var showSettings = false
     @State private var expandedGroups: Set<String> = []
+    @State private var timerTick: Int = 0
 
     /// Group rules by person name
     private var ruleGroups: [RuleGroup] {
@@ -130,6 +132,10 @@ struct DashboardView: View {
             // Refresh rules on appear (with small delay to let UI render)
             try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
             await appState.refreshRules()
+        }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            // Trigger UI refresh for countdown timers
+            timerTick += 1
         }
     }
 
