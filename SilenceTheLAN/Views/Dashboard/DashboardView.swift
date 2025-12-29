@@ -86,6 +86,21 @@ struct DashboardView: View {
                                         Task {
                                             await appState.toggleRule(rule)
                                         }
+                                    },
+                                    onTemporaryAllow: { rule, minutes in
+                                        Task {
+                                            await appState.temporaryAllow(rule, minutes: minutes)
+                                        }
+                                    },
+                                    onExtendTemporaryAllow: { rule, minutes in
+                                        Task {
+                                            await appState.extendTemporaryAllow(rule, minutes: minutes)
+                                        }
+                                    },
+                                    onCancelTemporaryAllow: { rule in
+                                        Task {
+                                            await appState.cancelTemporaryAllow(rule)
+                                        }
                                     }
                                 )
                             }
@@ -288,6 +303,9 @@ struct PersonGroupCard: View {
     let onToggleExpand: () -> Void
     let onToggleAll: (Bool) -> Void
     let onToggleRule: (ACLRule) -> Void
+    let onTemporaryAllow: (ACLRule, Int) -> Void
+    let onExtendTemporaryAllow: (ACLRule, Int) -> Void
+    let onCancelTemporaryAllow: (ACLRule) -> Void
 
     private var stateColor: Color {
         group.isAnyBlocking ? Color.theme.neonRed : Color.theme.neonGreen
@@ -378,7 +396,10 @@ struct PersonGroupCard: View {
                         ActivityRuleRow(
                             rule: rule,
                             isToggling: togglingRuleIds.contains(rule.ruleId),
-                            onToggle: { onToggleRule(rule) }
+                            onToggle: { onToggleRule(rule) },
+                            onTemporaryAllow: { minutes in onTemporaryAllow(rule, minutes) },
+                            onExtendTemporaryAllow: { minutes in onExtendTemporaryAllow(rule, minutes) },
+                            onCancelTemporaryAllow: { onCancelTemporaryAllow(rule) }
                         )
                     }
                 }
@@ -411,9 +432,15 @@ struct ActivityRuleRow: View {
     @Bindable var rule: ACLRule
     let isToggling: Bool
     let onToggle: () -> Void
+    let onTemporaryAllow: (Int) -> Void
+    let onExtendTemporaryAllow: (Int) -> Void
+    let onCancelTemporaryAllow: () -> Void
 
     private var stateColor: Color {
-        rule.isCurrentlyBlocking ? Color.theme.neonRed : Color.theme.neonGreen
+        if rule.hasActiveTemporaryAllow {
+            return Color.theme.neonAmber
+        }
+        return rule.isCurrentlyBlocking ? Color.theme.neonRed : Color.theme.neonGreen
     }
 
     private var activityIcon: String {
@@ -425,6 +452,13 @@ struct ActivityRuleRow: View {
         case "streaming": return "tv.fill"
         default: return "app.fill"
         }
+    }
+
+    private var statusText: String {
+        if let remaining = rule.temporaryAllowTimeRemainingFormatted {
+            return "Allowed for \(remaining)"
+        }
+        return rule.isCurrentlyBlocking ? "BLOCKED" : "ALLOWED"
     }
 
     var body: some View {
@@ -442,9 +476,9 @@ struct ActivityRuleRow: View {
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(.white)
 
-                    Text(rule.scheduleSummary)
+                    Text(rule.hasActiveTemporaryAllow ? statusText : rule.scheduleSummary)
                         .font(.system(size: 10))
-                        .foregroundColor(Color.theme.textTertiary)
+                        .foregroundColor(rule.hasActiveTemporaryAllow ? stateColor : Color.theme.textTertiary)
                 }
 
                 Spacer()
@@ -457,11 +491,16 @@ struct ActivityRuleRow: View {
                 } else {
                     // Compact toggle
                     HStack(spacing: 6) {
-                        Circle()
-                            .fill(stateColor)
-                            .frame(width: 8, height: 8)
+                        if rule.hasActiveTemporaryAllow {
+                            Image(systemName: "clock.fill")
+                                .font(.system(size: 9))
+                        } else {
+                            Circle()
+                                .fill(stateColor)
+                                .frame(width: 8, height: 8)
+                        }
 
-                        Text(rule.isCurrentlyBlocking ? "BLOCKED" : "ALLOWED")
+                        Text(statusText)
                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                             .foregroundColor(stateColor)
                     }
@@ -482,6 +521,45 @@ struct ActivityRuleRow: View {
         }
         .buttonStyle(.plain)
         .disabled(isToggling)
+        .contextMenu {
+            if rule.hasActiveTemporaryAllow {
+                // Active temporary allow - show cancel/extend options
+                Button(role: .destructive) {
+                    onCancelTemporaryAllow()
+                } label: {
+                    Label("Cancel (re-block now)", systemImage: "xmark.circle")
+                }
+
+                Divider()
+
+                Button { onExtendTemporaryAllow(15) } label: {
+                    Label("Extend by 15 min", systemImage: "clock.badge.plus")
+                }
+                Button { onExtendTemporaryAllow(30) } label: {
+                    Label("Extend by 30 min", systemImage: "clock.badge.plus")
+                }
+                Button { onExtendTemporaryAllow(60) } label: {
+                    Label("Extend by 1 hour", systemImage: "clock.badge.plus")
+                }
+                Button { onExtendTemporaryAllow(120) } label: {
+                    Label("Extend by 2 hours", systemImage: "clock.badge.plus")
+                }
+            } else if rule.isCurrentlyBlocking {
+                // Currently blocking - show temporary allow options
+                Button { onTemporaryAllow(15) } label: {
+                    Label("Allow 15 min", systemImage: "clock")
+                }
+                Button { onTemporaryAllow(30) } label: {
+                    Label("Allow 30 min", systemImage: "clock")
+                }
+                Button { onTemporaryAllow(60) } label: {
+                    Label("Allow 1 hour", systemImage: "clock")
+                }
+                Button { onTemporaryAllow(120) } label: {
+                    Label("Allow 2 hours", systemImage: "clock")
+                }
+            }
+        }
     }
 }
 
