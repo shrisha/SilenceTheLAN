@@ -9,7 +9,7 @@ import UserNotifications
 private let logger = Logger(subsystem: "com.silencethelan", category: "AppState")
 
 @MainActor
-final class AppState: ObservableObject {
+final class AppState: NSObject, ObservableObject {
     // Shared instance for Siri Intents access
     static let shared = AppState()
 
@@ -38,6 +38,7 @@ final class AppState: ObservableObject {
 
     func configure(modelContext: ModelContext) {
         self.modelContext = modelContext
+        NotificationService.shared.setDelegate(self)
         loadConfiguration()
     }
 
@@ -908,5 +909,51 @@ final class AppState: ObservableObject {
 
     func clearError() {
         errorMessage = nil
+    }
+}
+
+// MARK: - Notification Handling
+
+extension AppState: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        guard let ruleId = userInfo["ruleId"] as? String else {
+            completionHandler()
+            return
+        }
+
+        Task { @MainActor in
+            guard let rule = rules.first(where: { $0.ruleId == ruleId }) else {
+                completionHandler()
+                return
+            }
+
+            switch response.actionIdentifier {
+            case "REBLOCK_NOW":
+                await cancelTemporaryAllow(rule)
+            case "EXTEND_15":
+                await extendTemporaryAllow(rule, minutes: 15)
+            case UNNotificationDefaultActionIdentifier:
+                // User tapped notification body - check all expired
+                await checkExpiredTemporaryAllows()
+            default:
+                break
+            }
+
+            completionHandler()
+        }
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // Show notification even when app is in foreground
+        completionHandler([.banner, .sound])
     }
 }
