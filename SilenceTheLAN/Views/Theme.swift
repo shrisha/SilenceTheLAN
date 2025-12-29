@@ -17,6 +17,7 @@ struct ThemeColors {
     let neonRed = Color(red: 1, green: 0.27, blue: 0.27) // #FF4444
     let neonBlue = Color(red: 0.4, green: 0.6, blue: 1) // Accent blue
     let neonPurple = Color(red: 0.7, green: 0.4, blue: 1) // Accent purple
+    let neonAmber = Color(red: 1, green: 0.75, blue: 0) // #FFBF00
 
     // Text colors
     let textPrimary = Color.white
