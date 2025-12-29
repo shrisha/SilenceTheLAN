@@ -506,8 +506,8 @@ final class AppState: NSObject, ObservableObject {
         rule.temporaryAllowExpiry = Date().addingTimeInterval(TimeInterval(minutes * 60))
 
         do {
-            // Disable the rule to allow traffic
-            try await api.toggleRule(ruleId: rule.ruleId, enabled: false)
+            // Pause the rule to allow traffic (using session auth API)
+            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
             rule.isEnabled = false
             rule.lastSynced = Date()
 
@@ -581,7 +581,8 @@ final class AppState: NSObject, ObservableObject {
 
         do {
             if shouldEnable {
-                try await api.toggleRule(ruleId: rule.ruleId, enabled: true)
+                // Unpause the rule to restore blocking (using session auth API)
+                _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
                 rule.isEnabled = true
             }
             rule.lastSynced = Date()
