@@ -625,6 +625,13 @@ final class AppState: NSObject, ObservableObject {
     func toggleRule(_ rule: ACLRule) async {
         guard !togglingRuleIds.contains(rule.ruleId) else { return }
 
+        // If rule has active temporary allow, clear it (user taking manual control)
+        if rule.temporaryAllowExpiry != nil {
+            rule.temporaryAllowExpiry = nil
+            rule.temporaryAllowOriginalEnabled = nil
+            NotificationService.shared.cancelNotification(for: rule.ruleId)
+        }
+
         let isCurrentlyBlocking = rule.isCurrentlyBlocking
         let isPaused = !rule.isEnabled
 
