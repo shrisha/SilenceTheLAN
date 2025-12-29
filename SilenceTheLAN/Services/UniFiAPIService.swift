@@ -3,46 +3,6 @@ import OSLog
 
 private let logger = Logger(subsystem: "com.shrisha.SilenceTheLAN", category: "UniFiAPI")
 
-// MARK: - API Response Types
-
-struct SiteListResponse: Codable {
-    let data: [SiteDTO]
-}
-
-struct SiteDTO: Codable, Identifiable {
-    let id: String
-    let name: String
-    let description: String?
-    let timezone: String?
-}
-
-struct ACLRuleListResponse: Codable {
-    let offset: Int
-    let limit: Int
-    let count: Int
-    let totalCount: Int
-    let data: [ACLRuleDTO]
-}
-
-struct ACLRuleDTO: Codable {
-    let type: String
-    let id: String
-    let enabled: Bool
-    let name: String
-    let description: String?
-    let action: String
-    let index: Int
-    let sourceFilter: AnyCodable?
-    let destinationFilter: AnyCodable?
-    let protocolFilter: [String]?
-    let enforcingDeviceFilter: AnyCodable?
-    let metadata: ACLRuleMetadata?
-}
-
-struct ACLRuleMetadata: Codable {
-    let origin: String?
-}
-
 // MARK: - Firewall Policy Types (v2 API - zone-based rules)
 
 struct FirewallPolicyDTO: Codable, Identifiable {
@@ -230,19 +190,6 @@ struct FirewallRuleUpdateRequest: Codable {
     }
 }
 
-struct ACLRuleUpdateRequest: Codable {
-    let type: String
-    let enabled: Bool
-    let name: String
-    let action: String
-    let index: Int
-    let description: String?
-    let sourceFilter: AnyCodable?
-    let destinationFilter: AnyCodable?
-    let protocolFilter: [String]?
-    let enforcingDeviceFilter: AnyCodable?
-}
-
 // MARK: - AnyCodable for dynamic JSON
 
 struct AnyCodable: Codable {
@@ -330,7 +277,6 @@ struct UniFiSite: Codable, Identifiable {
 
 enum UniFiAPIError: Error, LocalizedError {
     case invalidURL
-    case noAPIKey
     case noCredentials
     case unauthorized
     case twoFactorRequired
@@ -344,8 +290,6 @@ enum UniFiAPIError: Error, LocalizedError {
         switch self {
         case .invalidURL:
             return "Invalid UniFi controller URL"
-        case .noAPIKey:
-            return "API key not configured"
         case .noCredentials:
             return "Credentials not configured"
         case .unauthorized:
@@ -392,7 +336,6 @@ struct LoginResponse: Codable {
 final class UniFiAPIService {
     private let session: URLSession
     private var host: String = ""
-    private var baseURL: String = ""
     private var siteId: String = ""
 
     // Session-based auth state
@@ -419,7 +362,6 @@ final class UniFiAPIService {
 
     func configure(host: String, siteId: String) {
         self.host = host
-        self.baseURL = "https://\(host)/proxy/network/integration/v1/sites/\(siteId)"
         self.siteId = siteId
         logger.info("API configured: host=\(host), siteId=\(siteId)")
     }
@@ -726,79 +668,6 @@ final class UniFiAPIService {
         return response.data
     }
 
-    // MARK: - List Sites (Integration API - for discovery)
-
-    func listSites(host: String) async throws -> [SiteDTO] {
-        let urlString = "https://\(host)/proxy/network/integration/v1/sites"
-        guard let url = URL(string: urlString) else {
-            throw UniFiAPIError.invalidURL
-        }
-
-        let request = try buildRequest(url: url, method: "GET")
-        logger.info("Fetching sites from: \(urlString)")
-
-        let response: SiteListResponse = try await execute(request)
-        logger.info("Found \(response.data.count) sites")
-        return response.data
-    }
-
-    // MARK: - List ACL Rules
-
-    func listACLRules(limit: Int = 200) async throws -> [ACLRuleDTO] {
-        let url = try buildURL(path: "/acl-rules", query: ["limit": "\(limit)"])
-        let request = try buildRequest(url: url, method: "GET")
-
-        logger.info("Fetching ACL rules from: \(url.absoluteString)")
-        let response: ACLRuleListResponse = try await execute(request)
-        logger.info("Found \(response.data.count) ACL rules (total: \(response.totalCount))")
-        return response.data
-    }
-
-    // MARK: - Get Single ACL Rule
-
-    func getACLRule(ruleId: String) async throws -> ACLRuleDTO {
-        let url = try buildURL(path: "/acl-rules/\(ruleId)")
-        let request = try buildRequest(url: url, method: "GET")
-
-        return try await execute(request)
-    }
-
-    // MARK: - Update ACL Rule
-
-    func updateACLRule(ruleId: String, update: ACLRuleUpdateRequest) async throws -> ACLRuleDTO {
-        let url = try buildURL(path: "/acl-rules/\(ruleId)")
-        var request = try buildRequest(url: url, method: "PUT")
-
-        let encoder = JSONEncoder()
-        request.httpBody = try encoder.encode(update)
-
-        return try await execute(request)
-    }
-
-    // MARK: - Toggle Rule (Convenience)
-
-    func toggleRule(ruleId: String, enabled: Bool) async throws -> ACLRuleDTO {
-        // GET current state
-        let current = try await getACLRule(ruleId: ruleId)
-
-        // Build update with all required fields
-        let update = ACLRuleUpdateRequest(
-            type: current.type,
-            enabled: enabled,
-            name: current.name,
-            action: current.action,
-            index: current.index,
-            description: current.description,
-            sourceFilter: current.sourceFilter,
-            destinationFilter: current.destinationFilter,
-            protocolFilter: current.protocolFilter,
-            enforcingDeviceFilter: current.enforcingDeviceFilter
-        )
-
-        // PUT updated rule
-        return try await updateACLRule(ruleId: ruleId, update: update)
-    }
-
     // MARK: - List Firewall Rules (REST API with session auth)
 
     func listFirewallRules() async throws -> [FirewallPolicyDTO] {
@@ -1029,47 +898,7 @@ final class UniFiAPIService {
         return result
     }
 
-    // MARK: - Verify Connection
-
-    func verifyConnection() async throws -> Bool {
-        _ = try await listACLRules(limit: 1)
-        return true
-    }
-
     // MARK: - Private Helpers
-
-    private func buildURL(path: String, query: [String: String]? = nil) throws -> URL {
-        guard !baseURL.isEmpty else {
-            throw UniFiAPIError.invalidURL
-        }
-
-        var urlString = baseURL + path
-
-        if let query = query, !query.isEmpty {
-            let queryString = query.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
-            urlString += "?\(queryString)"
-        }
-
-        guard let url = URL(string: urlString) else {
-            throw UniFiAPIError.invalidURL
-        }
-
-        return url
-    }
-
-    private func buildRequest(url: URL, method: String) throws -> URLRequest {
-        guard let apiKey = try? KeychainService.shared.getAPIKey() else {
-            throw UniFiAPIError.noAPIKey
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        return request
-    }
 
     private func buildSessionRequest(url: URL, method: String) -> URLRequest {
         var request = URLRequest(url: url)

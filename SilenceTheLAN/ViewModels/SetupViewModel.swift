@@ -16,10 +16,8 @@ final class SetupViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var discoveredHost: String?
     @Published var availableSites: [UniFiSite] = []
-    @Published var availableRules: [ACLRuleDTO] = []
     @Published var availableFirewallRules: [FirewallPolicyDTO] = []
     @Published var selectedRuleIds: Set<String> = []
-    @Published var usingFirewallRules: Bool = true  // Default to firewall rules (REST API)
 
     enum SetupStep: CaseIterable {
         case welcome
@@ -178,7 +176,6 @@ final class SetupViewModel: ObservableObject {
 
         isLoading = true
         errorMessage = nil
-        usingFirewallRules = true  // We only use firewall rules now (REST API with session auth)
 
         logger.info("loadRules: Configuring API with host=\(self.host), siteId=\(self.siteId)")
         api.configure(host: host, siteId: siteId)
@@ -234,19 +231,11 @@ final class SetupViewModel: ObservableObject {
     }
 
     func selectAllRules() {
-        if usingFirewallRules {
-            selectedRuleIds = Set(availableFirewallRules.map { $0.id })
-        } else {
-            selectedRuleIds = Set(availableRules.map { $0.id })
-        }
+        selectedRuleIds = Set(availableFirewallRules.map { $0.id })
     }
 
     func deselectAllRules() {
         selectedRuleIds.removeAll()
-    }
-
-    func getSelectedRules() -> [ACLRuleDTO] {
-        availableRules.filter { selectedRuleIds.contains($0.id) }
     }
 
     func getSelectedFirewallRules() -> [FirewallPolicyDTO] {
@@ -255,11 +244,11 @@ final class SetupViewModel: ObservableObject {
 
     // Computed property for total available rules count
     var totalAvailableRulesCount: Int {
-        usingFirewallRules ? availableFirewallRules.count : availableRules.count
+        availableFirewallRules.count
     }
 
     var hasAvailableRules: Bool {
-        usingFirewallRules ? !availableFirewallRules.isEmpty : !availableRules.isEmpty
+        !availableFirewallRules.isEmpty
     }
 
     // MARK: - Navigation

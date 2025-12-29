@@ -762,25 +762,15 @@ struct RuleSelectionStep: View {
                 }
                 .padding(.horizontal, 8)
 
-                // Rules list - show firewall or ACL rules
+                // Rules list
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        if viewModel.usingFirewallRules {
-                            ForEach(viewModel.availableFirewallRules) { rule in
-                                FirewallRuleSelectionCard(
-                                    rule: rule,
-                                    isSelected: viewModel.selectedRuleIds.contains(rule.id),
-                                    onTap: { viewModel.toggleRuleSelection(rule.id) }
-                                )
-                            }
-                        } else {
-                            ForEach(viewModel.availableRules, id: \.id) { rule in
-                                RuleSelectionCard(
-                                    rule: rule,
-                                    isSelected: viewModel.selectedRuleIds.contains(rule.id),
-                                    onTap: { viewModel.toggleRuleSelection(rule.id) }
-                                )
-                            }
+                        ForEach(viewModel.availableFirewallRules) { rule in
+                            FirewallRuleSelectionCard(
+                                rule: rule,
+                                isSelected: viewModel.selectedRuleIds.contains(rule.id),
+                                onTap: { viewModel.toggleRuleSelection(rule.id) }
+                            )
                         }
                     }
                     .padding(.bottom, 100)
@@ -797,15 +787,10 @@ struct RuleSelectionStep: View {
                 .buttonStyle(.ghost(Color.theme.textSecondary))
 
                 Button("Finish Setup") {
-                    if viewModel.usingFirewallRules {
-                        appState.saveSelectedFirewallRules(viewModel.getSelectedFirewallRules())
-                    } else {
-                        appState.saveSelectedRules(viewModel.getSelectedRules())
-                    }
+                    appState.saveSelectedFirewallRules(viewModel.getSelectedFirewallRules())
                     appState.saveConfiguration(
                         host: viewModel.host,
-                        siteId: viewModel.siteId,
-                        usingFirewallRules: viewModel.usingFirewallRules
+                        siteId: viewModel.siteId
                     )
                 }
                 .buttonStyle(.neon(Color.theme.neonGreen))
@@ -852,61 +837,6 @@ struct RuleSelectionStep: View {
         }
         .padding(32)
         .glassCard()
-    }
-}
-
-// MARK: - Rule Selection Card
-
-struct RuleSelectionCard: View {
-    let rule: ACLRuleDTO
-    let isSelected: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                // Checkbox
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundColor(isSelected ? Color.theme.neonGreen : Color.theme.textTertiary)
-
-                // Rule info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(displayName(for: rule.name))
-                        .font(.headline)
-                        .foregroundColor(.white)
-
-                    HStack(spacing: 8) {
-                        Text(rule.enabled ? "Active" : "Inactive")
-                            .font(.caption)
-                            .foregroundColor(rule.enabled ? Color.theme.neonGreen : Color.theme.textSecondary)
-
-                        Text("•")
-                            .foregroundColor(Color.theme.textTertiary)
-
-                        Text(rule.action)
-                            .font(.caption)
-                            .foregroundColor(Color.theme.textSecondary)
-                    }
-                }
-
-                Spacer()
-            }
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? Color.theme.neonGreen.opacity(0.1) : Color.theme.surface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color.theme.neonGreen.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func displayName(for name: String) -> String {
-        RulePrefixMatcher.shared.displayName(for: name)
     }
 }
 

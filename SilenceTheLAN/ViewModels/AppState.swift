@@ -21,7 +21,6 @@ final class AppState: NSObject, ObservableObject {
     @Published var errorMessage: String?
     @Published var rules: [ACLRule] = []
     @Published var togglingRuleIds: Set<String> = []
-    @Published var usingFirewallRules = false  // Track which API type
 
     // MARK: - Services
 
@@ -55,7 +54,7 @@ final class AppState: NSObject, ObservableObject {
 
         if let config = try? context.fetch(descriptor).first,
            config.isConfigured {
-            logger.info("loadConfiguration: Found config - host=\(config.unifiHost), siteId=\(config.siteId), usingFirewallRules=\(config.usingFirewallRules)")
+            logger.info("loadConfiguration: Found config - host=\(config.unifiHost), siteId=\(config.siteId)")
 
             // Configure rule prefix matcher with saved prefixes
             RulePrefixMatcher.configure(with: config)
@@ -72,7 +71,6 @@ final class AppState: NSObject, ObservableObject {
             api.restoreSession()  // Try to restore previous session
             logger.info("loadConfiguration: Configuring networkMonitor with host=\(config.unifiHost)")
             networkMonitor.configure(host: config.unifiHost)
-            usingFirewallRules = config.usingFirewallRules
             // Load cached rules BEFORE setting isConfigured to avoid empty dashboard flash
             loadCachedRules()
             isConfigured = true
@@ -83,8 +81,8 @@ final class AppState: NSObject, ObservableObject {
         }
     }
 
-    func saveConfiguration(host: String, siteId: String, usingFirewallRules: Bool = false) {
-        logger.info("saveConfiguration called: host=\(host), siteId=\(siteId), usingFirewallRules=\(usingFirewallRules)")
+    func saveConfiguration(host: String, siteId: String) {
+        logger.info("saveConfiguration called: host=\(host), siteId=\(siteId)")
         guard let context = modelContext else {
             logger.error("saveConfiguration: modelContext is nil!")
             return
@@ -101,7 +99,7 @@ final class AppState: NSObject, ObservableObject {
             unifiHost: host,
             siteId: siteId,
             isConfigured: true,
-            usingFirewallRules: usingFirewallRules,
+            usingFirewallRules: true,  // Always use firewall rules (REST API)
             lastUpdated: Date()
         )
         context.insert(config)
@@ -111,7 +109,6 @@ final class AppState: NSObject, ObservableObject {
         api.configure(host: host, siteId: siteId)
         logger.info("saveConfiguration: Configuring networkMonitor with host=\(host)")
         networkMonitor.configure(host: host)
-        self.usingFirewallRules = usingFirewallRules
         isConfigured = true
         logger.info("saveConfiguration: Completed, isConfigured=true")
     }
@@ -243,17 +240,10 @@ final class AppState: NSObject, ObservableObject {
         errorMessage = nil
 
         do {
-            if usingFirewallRules {
-                logger.info("refreshRules: Fetching firewall rules")
-                let remoteDTOs = try await api.listFirewallRules()
-                logger.info("refreshRules: Got \(remoteDTOs.count) firewall rules")
-                await updateCachedRulesFromFirewall(from: remoteDTOs)
-            } else {
-                logger.info("refreshRules: Fetching ACL rules")
-                let remoteDTOs = try await api.listACLRules()
-                logger.info("refreshRules: Got \(remoteDTOs.count) ACL rules")
-                await updateCachedRules(from: remoteDTOs)
-            }
+            logger.info("refreshRules: Fetching firewall rules")
+            let remoteDTOs = try await api.listFirewallRules()
+            logger.info("refreshRules: Got \(remoteDTOs.count) firewall rules")
+            await updateCachedRulesFromFirewall(from: remoteDTOs)
             loadCachedRules()
             logger.info("refreshRules: Completed successfully, \(self.rules.count) rules loaded")
 
@@ -275,30 +265,6 @@ final class AppState: NSObject, ObservableObject {
         }
 
         isLoading = false
-    }
-
-    private func updateCachedRules(from dtos: [ACLRuleDTO]) async {
-        guard let context = modelContext else { return }
-
-        for dto in dtos {
-            let ruleId = dto.id
-            let descriptor = FetchDescriptor<ACLRule>(
-                predicate: #Predicate { rule in rule.ruleId == ruleId }
-            )
-
-            if let existing = try? context.fetch(descriptor).first {
-                // Update existing rule
-                existing.isEnabled = dto.enabled
-                existing.name = dto.name
-                existing.action = dto.action
-                existing.index = dto.index
-                existing.ruleDescription = dto.description
-                existing.lastSynced = Date()
-            }
-            // Don't create new rules here - that's done during selection
-        }
-
-        try? context.save()
     }
 
     private func updateCachedRulesFromFirewall(from dtos: [FirewallPolicyDTO]) async {
@@ -349,48 +315,6 @@ final class AppState: NSObject, ObservableObject {
 
         logger.info("updateCachedRulesFromFirewall: Updated \(matchCount) rules")
         try? context.save()
-    }
-
-    func saveSelectedRules(_ dtos: [ACLRuleDTO]) {
-        guard let context = modelContext else { return }
-
-        // Clear existing rules
-        let descriptor = FetchDescriptor<ACLRule>()
-        if let existing = try? context.fetch(descriptor) {
-            existing.forEach { context.delete($0) }
-        }
-
-        // Create new selected rules
-        for dto in dtos {
-            let rule = ACLRule(
-                ruleId: dto.id,
-                ruleType: dto.type,
-                name: dto.name,
-                action: dto.action,
-                index: dto.index,
-                isEnabled: dto.enabled,
-                ruleDescription: dto.description,
-                isSelected: true,
-                lastSynced: Date()
-            )
-
-            // Store filter JSON for PUT requests
-            let encoder = JSONEncoder()
-            if let sourceFilter = dto.sourceFilter {
-                rule.sourceFilterJSON = try? String(data: encoder.encode(sourceFilter), encoding: .utf8)
-            }
-            if let destFilter = dto.destinationFilter {
-                rule.destinationFilterJSON = try? String(data: encoder.encode(destFilter), encoding: .utf8)
-            }
-            if let protoFilter = dto.protocolFilter {
-                rule.protocolFilterJSON = try? String(data: encoder.encode(protoFilter), encoding: .utf8)
-            }
-
-            context.insert(rule)
-        }
-
-        try? context.save()
-        loadCachedRules()
     }
 
     func saveSelectedFirewallRules(_ dtos: [FirewallPolicyDTO]) {
@@ -650,100 +574,94 @@ final class AppState: NSObject, ObservableObject {
         generator.impactOccurred()
 
         do {
-            if usingFirewallRules {
-                let hasOriginalSchedule = rule.originalScheduleStart != nil && rule.originalScheduleEnd != nil
-                let isInOriginalWindow = rule.isWithinOriginalScheduleWindow
+            let hasOriginalSchedule = rule.originalScheduleStart != nil && rule.originalScheduleEnd != nil
+            let isInOriginalWindow = rule.isWithinOriginalScheduleWindow
 
-                if isCurrentlyBlocking {
-                    // ALLOW action: Currently blocking → want to allow traffic
-                    if rule.scheduleMode.uppercased() == "ALWAYS" && hasOriginalSchedule {
-                        // Restore original schedule via API
-                        logger.info("Action: RESTORE SCHEDULE (from ALWAYS back to \(rule.originalScheduleStart!)-\(rule.originalScheduleEnd!))")
-                        rule.scheduleMode = "EVERY_DAY"
-                        rule.scheduleStart = rule.originalScheduleStart
-                        rule.scheduleEnd = rule.originalScheduleEnd
-                        _ = try await api.toggleFirewallSchedule(
-                            ruleId: rule.ruleId,
-                            blockNow: false,
-                            scheduleStart: rule.originalScheduleStart!,
-                            scheduleEnd: rule.originalScheduleEnd!
-                        )
+            if isCurrentlyBlocking {
+                // ALLOW action: Currently blocking → want to allow traffic
+                if rule.scheduleMode.uppercased() == "ALWAYS" && hasOriginalSchedule {
+                    // Restore original schedule via API
+                    logger.info("Action: RESTORE SCHEDULE (from ALWAYS back to \(rule.originalScheduleStart!)-\(rule.originalScheduleEnd!))")
+                    rule.scheduleMode = "EVERY_DAY"
+                    rule.scheduleStart = rule.originalScheduleStart
+                    rule.scheduleEnd = rule.originalScheduleEnd
+                    _ = try await api.toggleFirewallSchedule(
+                        ruleId: rule.ruleId,
+                        blockNow: false,
+                        scheduleStart: rule.originalScheduleStart!,
+                        scheduleEnd: rule.originalScheduleEnd!
+                    )
 
-                        if isInOriginalWindow {
-                            // Inside schedule window - also pause to allow NOW
-                            logger.info("Action: Also PAUSE (inside schedule window)")
-                            rule.isEnabled = false
-                            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
-                        } else {
-                            // Outside schedule window - traffic allowed by schedule
-                            rule.isEnabled = true
-                        }
-                    } else {
-                        // Blocking by schedule - just pause
-                        logger.info("Action: PAUSE (allow traffic)")
+                    if isInOriginalWindow {
+                        // Inside schedule window - also pause to allow NOW
+                        logger.info("Action: Also PAUSE (inside schedule window)")
                         rule.isEnabled = false
                         _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
-                    }
-                } else if isPaused {
-                    // BLOCK action: Currently paused → want to block traffic
-                    if isInOriginalWindow && hasOriginalSchedule && rule.scheduleMode.uppercased() == "ALWAYS" {
-                        // Inside original schedule window - restore schedule + unpause (schedule will block)
-                        logger.info("Action: RESTORE SCHEDULE + UNPAUSE (inside window, schedule will block)")
-                        rule.scheduleMode = "EVERY_DAY"
-                        rule.scheduleStart = rule.originalScheduleStart
-                        rule.scheduleEnd = rule.originalScheduleEnd
-                        rule.isEnabled = true
-                        _ = try await api.toggleFirewallSchedule(
-                            ruleId: rule.ruleId,
-                            blockNow: false,
-                            scheduleStart: rule.originalScheduleStart!,
-                            scheduleEnd: rule.originalScheduleEnd!
-                        )
-                        // Unpause after restoring schedule
-                        _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
-                    } else if !isInOriginalWindow || !hasOriginalSchedule {
-                        // Outside schedule window OR no original schedule - set to ALWAYS + unpause
-                        logger.info("Action: BLOCK NOW (set ALWAYS + unpause)")
-                        rule.scheduleMode = "ALWAYS"
-                        rule.isEnabled = true
-                        _ = try await api.toggleFirewallSchedule(
-                            ruleId: rule.ruleId,
-                            blockNow: true,
-                            scheduleStart: rule.originalScheduleStart ?? rule.scheduleStart,
-                            scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
-                        )
-                        // Also unpause the rule
-                        _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
                     } else {
-                        // Has schedule, inside window - just unpause
-                        logger.info("Action: UNPAUSE (schedule will block)")
+                        // Outside schedule window - traffic allowed by schedule
                         rule.isEnabled = true
-                        _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
                     }
                 } else {
-                    // BLOCK action: Outside schedule window (not paused) → Block Now
-                    logger.info("Action: BLOCK NOW (set ALWAYS)")
-
-                    // Preserve original schedule before changing to ALWAYS
-                    if rule.scheduleMode.uppercased() != "ALWAYS" &&
-                       rule.scheduleStart != nil && rule.scheduleEnd != nil {
-                        rule.originalScheduleStart = rule.scheduleStart
-                        rule.originalScheduleEnd = rule.scheduleEnd
-                        logger.info("Preserved original schedule: \(rule.scheduleStart ?? "nil") - \(rule.scheduleEnd ?? "nil")")
-                    }
-
+                    // Blocking by schedule - just pause
+                    logger.info("Action: PAUSE (allow traffic)")
+                    rule.isEnabled = false
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
+                }
+            } else if isPaused {
+                // BLOCK action: Currently paused → want to block traffic
+                if isInOriginalWindow && hasOriginalSchedule && rule.scheduleMode.uppercased() == "ALWAYS" {
+                    // Inside original schedule window - restore schedule + unpause (schedule will block)
+                    logger.info("Action: RESTORE SCHEDULE + UNPAUSE (inside window, schedule will block)")
+                    rule.scheduleMode = "EVERY_DAY"
+                    rule.scheduleStart = rule.originalScheduleStart
+                    rule.scheduleEnd = rule.originalScheduleEnd
+                    rule.isEnabled = true
+                    _ = try await api.toggleFirewallSchedule(
+                        ruleId: rule.ruleId,
+                        blockNow: false,
+                        scheduleStart: rule.originalScheduleStart!,
+                        scheduleEnd: rule.originalScheduleEnd!
+                    )
+                    // Unpause after restoring schedule
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
+                } else if !isInOriginalWindow || !hasOriginalSchedule {
+                    // Outside schedule window OR no original schedule - set to ALWAYS + unpause
+                    logger.info("Action: BLOCK NOW (set ALWAYS + unpause)")
                     rule.scheduleMode = "ALWAYS"
+                    rule.isEnabled = true
                     _ = try await api.toggleFirewallSchedule(
                         ruleId: rule.ruleId,
                         blockNow: true,
                         scheduleStart: rule.originalScheduleStart ?? rule.scheduleStart,
                         scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
                     )
+                    // Also unpause the rule
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
+                } else {
+                    // Has schedule, inside window - just unpause
+                    logger.info("Action: UNPAUSE (schedule will block)")
+                    rule.isEnabled = true
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
                 }
             } else {
-                // Legacy ACL rules use enabled toggle
-                _ = try await api.toggleRule(ruleId: rule.ruleId, enabled: !rule.isEnabled)
-                rule.isEnabled = !rule.isEnabled
+                // BLOCK action: Outside schedule window (not paused) → Block Now
+                logger.info("Action: BLOCK NOW (set ALWAYS)")
+
+                // Preserve original schedule before changing to ALWAYS
+                if rule.scheduleMode.uppercased() != "ALWAYS" &&
+                   rule.scheduleStart != nil && rule.scheduleEnd != nil {
+                    rule.originalScheduleStart = rule.scheduleStart
+                    rule.originalScheduleEnd = rule.scheduleEnd
+                    logger.info("Preserved original schedule: \(rule.scheduleStart ?? "nil") - \(rule.scheduleEnd ?? "nil")")
+                }
+
+                rule.scheduleMode = "ALWAYS"
+                _ = try await api.toggleFirewallSchedule(
+                    ruleId: rule.ruleId,
+                    blockNow: true,
+                    scheduleStart: rule.originalScheduleStart ?? rule.scheduleStart,
+                    scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
+                )
             }
 
             // Success haptic
@@ -802,96 +720,90 @@ final class AppState: NSObject, ObservableObject {
             let previousScheduleMode = rule.scheduleMode
 
             do {
-                if usingFirewallRules {
-                    let hasOriginalSchedule = rule.originalScheduleStart != nil && rule.originalScheduleEnd != nil
-                    let isInOriginalWindow = rule.isWithinOriginalScheduleWindow
+                let hasOriginalSchedule = rule.originalScheduleStart != nil && rule.originalScheduleEnd != nil
+                let isInOriginalWindow = rule.isWithinOriginalScheduleWindow
 
-                    if shouldBlock {
-                        // BLOCK action - use same logic as individual toggleRule
-                        if isPaused {
-                            if isInOriginalWindow && hasOriginalSchedule && rule.scheduleMode.uppercased() == "ALWAYS" {
-                                // Inside original schedule window - restore schedule + unpause
-                                logger.info("toggleAllRulesForPerson: RESTORE SCHEDULE + UNPAUSE \(rule.name)")
-                                rule.scheduleMode = "EVERY_DAY"
-                                rule.scheduleStart = rule.originalScheduleStart
-                                rule.scheduleEnd = rule.originalScheduleEnd
-                                rule.isEnabled = true
-                                _ = try await api.toggleFirewallSchedule(
-                                    ruleId: rule.ruleId,
-                                    blockNow: false,
-                                    scheduleStart: rule.originalScheduleStart!,
-                                    scheduleEnd: rule.originalScheduleEnd!
-                                )
-                                _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
-                            } else if !isInOriginalWindow || !hasOriginalSchedule {
-                                // Outside schedule window OR no original schedule - set to ALWAYS + unpause
-                                logger.info("toggleAllRulesForPerson: BLOCK NOW (ALWAYS + unpause) \(rule.name)")
-                                rule.scheduleMode = "ALWAYS"
-                                rule.isEnabled = true
-                                _ = try await api.toggleFirewallSchedule(
-                                    ruleId: rule.ruleId,
-                                    blockNow: true,
-                                    scheduleStart: rule.originalScheduleStart ?? rule.scheduleStart,
-                                    scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
-                                )
-                                // Also unpause the rule
-                                _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
-                            } else {
-                                // Has schedule, inside window - just unpause
-                                logger.info("toggleAllRulesForPerson: UNPAUSE \(rule.name)")
-                                rule.isEnabled = true
-                                _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
-                            }
-                        } else {
-                            // Not paused but not blocking (outside schedule) → set to ALWAYS
-                            logger.info("toggleAllRulesForPerson: BLOCK NOW (ALWAYS) \(rule.name)")
-                            if rule.scheduleMode.uppercased() != "ALWAYS" &&
-                               rule.scheduleStart != nil && rule.scheduleEnd != nil {
-                                rule.originalScheduleStart = rule.scheduleStart
-                                rule.originalScheduleEnd = rule.scheduleEnd
-                            }
-                            rule.scheduleMode = "ALWAYS"
-                            _ = try await api.toggleFirewallSchedule(
-                                ruleId: rule.ruleId,
-                                blockNow: true,
-                                scheduleStart: rule.originalScheduleStart ?? rule.scheduleStart,
-                                scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
-                            )
-                        }
-                    } else {
-                        // ALLOW action - use same logic as individual toggleRule
-                        if rule.scheduleMode.uppercased() == "ALWAYS" && hasOriginalSchedule {
-                            // Restore original schedule
-                            logger.info("toggleAllRulesForPerson: RESTORE SCHEDULE \(rule.name)")
+                if shouldBlock {
+                    // BLOCK action - use same logic as individual toggleRule
+                    if isPaused {
+                        if isInOriginalWindow && hasOriginalSchedule && rule.scheduleMode.uppercased() == "ALWAYS" {
+                            // Inside original schedule window - restore schedule + unpause
+                            logger.info("toggleAllRulesForPerson: RESTORE SCHEDULE + UNPAUSE \(rule.name)")
                             rule.scheduleMode = "EVERY_DAY"
                             rule.scheduleStart = rule.originalScheduleStart
                             rule.scheduleEnd = rule.originalScheduleEnd
+                            rule.isEnabled = true
                             _ = try await api.toggleFirewallSchedule(
                                 ruleId: rule.ruleId,
                                 blockNow: false,
                                 scheduleStart: rule.originalScheduleStart!,
                                 scheduleEnd: rule.originalScheduleEnd!
                             )
-
-                            if isInOriginalWindow {
-                                // Inside window - also pause
-                                logger.info("toggleAllRulesForPerson: Also PAUSE \(rule.name)")
-                                rule.isEnabled = false
-                                _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
-                            } else {
-                                rule.isEnabled = true
-                            }
+                            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
+                        } else if !isInOriginalWindow || !hasOriginalSchedule {
+                            // Outside schedule window OR no original schedule - set to ALWAYS + unpause
+                            logger.info("toggleAllRulesForPerson: BLOCK NOW (ALWAYS + unpause) \(rule.name)")
+                            rule.scheduleMode = "ALWAYS"
+                            rule.isEnabled = true
+                            _ = try await api.toggleFirewallSchedule(
+                                ruleId: rule.ruleId,
+                                blockNow: true,
+                                scheduleStart: rule.originalScheduleStart ?? rule.scheduleStart,
+                                scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
+                            )
+                            // Also unpause the rule
+                            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
                         } else {
-                            // Just pause
-                            logger.info("toggleAllRulesForPerson: PAUSE \(rule.name)")
-                            rule.isEnabled = false
-                            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
+                            // Has schedule, inside window - just unpause
+                            logger.info("toggleAllRulesForPerson: UNPAUSE \(rule.name)")
+                            rule.isEnabled = true
+                            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
                         }
+                    } else {
+                        // Not paused but not blocking (outside schedule) → set to ALWAYS
+                        logger.info("toggleAllRulesForPerson: BLOCK NOW (ALWAYS) \(rule.name)")
+                        if rule.scheduleMode.uppercased() != "ALWAYS" &&
+                           rule.scheduleStart != nil && rule.scheduleEnd != nil {
+                            rule.originalScheduleStart = rule.scheduleStart
+                            rule.originalScheduleEnd = rule.scheduleEnd
+                        }
+                        rule.scheduleMode = "ALWAYS"
+                        _ = try await api.toggleFirewallSchedule(
+                            ruleId: rule.ruleId,
+                            blockNow: true,
+                            scheduleStart: rule.originalScheduleStart ?? rule.scheduleStart,
+                            scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
+                        )
                     }
                 } else {
-                    // Legacy ACL rules
-                    _ = try await api.toggleRule(ruleId: rule.ruleId, enabled: shouldBlock)
-                    rule.isEnabled = shouldBlock
+                    // ALLOW action - use same logic as individual toggleRule
+                    if rule.scheduleMode.uppercased() == "ALWAYS" && hasOriginalSchedule {
+                        // Restore original schedule
+                        logger.info("toggleAllRulesForPerson: RESTORE SCHEDULE \(rule.name)")
+                        rule.scheduleMode = "EVERY_DAY"
+                        rule.scheduleStart = rule.originalScheduleStart
+                        rule.scheduleEnd = rule.originalScheduleEnd
+                        _ = try await api.toggleFirewallSchedule(
+                            ruleId: rule.ruleId,
+                            blockNow: false,
+                            scheduleStart: rule.originalScheduleStart!,
+                            scheduleEnd: rule.originalScheduleEnd!
+                        )
+
+                        if isInOriginalWindow {
+                            // Inside window - also pause
+                            logger.info("toggleAllRulesForPerson: Also PAUSE \(rule.name)")
+                            rule.isEnabled = false
+                            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
+                        } else {
+                            rule.isEnabled = true
+                        }
+                    } else {
+                        // Just pause
+                        logger.info("toggleAllRulesForPerson: PAUSE \(rule.name)")
+                        rule.isEnabled = false
+                        _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
+                    }
                 }
 
                 rule.lastSynced = Date()
