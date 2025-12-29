@@ -243,6 +243,10 @@ final class AppState: NSObject, ObservableObject {
             logger.info("refreshRules: Fetching firewall rules")
             let remoteDTOs = try await api.listFirewallRules()
             logger.info("refreshRules: Got \(remoteDTOs.count) firewall rules")
+
+            // API call succeeded - mark host as reachable
+            networkMonitor.markReachable()
+
             await updateCachedRulesFromFirewall(from: remoteDTOs)
             loadCachedRules()
             logger.info("refreshRules: Completed successfully, \(self.rules.count) rules loaded")
@@ -257,6 +261,7 @@ final class AppState: NSObject, ObservableObject {
             } else if errorDesc.contains("timed out") || errorDesc.contains("network") || errorDesc.contains("connection") {
                 // Network error - mark as unreachable
                 logger.error("refreshRules: Network error - \(error.localizedDescription)")
+                networkMonitor.markUnreachable()
                 errorMessage = "Cannot reach UniFi controller"
             } else {
                 logger.error("refreshRules: Error - \(error.localizedDescription)")

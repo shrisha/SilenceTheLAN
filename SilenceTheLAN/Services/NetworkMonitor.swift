@@ -72,6 +72,22 @@ final class NetworkMonitor: ObservableObject {
         await scheduleReachabilityCheck(host: host)
     }
 
+    /// Mark host as reachable (called when API calls succeed)
+    func markReachable() {
+        if !isReachable {
+            logger.info("markReachable: Host marked as reachable by successful API call")
+            isReachable = true
+        }
+    }
+
+    /// Mark host as unreachable (called when API calls fail with network errors)
+    func markUnreachable() {
+        if isReachable {
+            logger.info("markUnreachable: Host marked as unreachable")
+            isReachable = false
+        }
+    }
+
     /// Schedule a reachability check, debouncing concurrent requests
     private func scheduleReachabilityCheck(host: String) async {
         if isCheckingReachability {
