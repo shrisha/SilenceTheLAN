@@ -30,6 +30,10 @@ final class ACLRule {
     var isSelected: Bool
     var lastSynced: Date
 
+    // Temporary allow tracking
+    var temporaryAllowExpiry: Date?           // When temp allow expires (nil = not active)
+    var temporaryAllowOriginalEnabled: Bool?  // Was rule enabled before temp allow?
+
     // Store complex filter objects as JSON for PUT requests
     var sourceFilterJSON: String?
     var destinationFilterJSON: String?
@@ -50,6 +54,31 @@ final class ACLRule {
     /// Returns "Internet" if no activity specified
     var activityName: String {
         RulePrefixMatcher.shared.activityName(for: name)
+    }
+
+    /// Whether a temporary allow is currently active
+    var hasActiveTemporaryAllow: Bool {
+        guard let expiry = temporaryAllowExpiry else { return false }
+        return expiry > Date()
+    }
+
+    /// Time remaining for temporary allow (nil if not active)
+    var temporaryAllowTimeRemaining: TimeInterval? {
+        guard let expiry = temporaryAllowExpiry, expiry > Date() else { return nil }
+        return expiry.timeIntervalSinceNow
+    }
+
+    /// Formatted time remaining string (e.g., "23 min" or "1h 30m")
+    var temporaryAllowTimeRemainingFormatted: String? {
+        guard let remaining = temporaryAllowTimeRemaining else { return nil }
+        let minutes = Int(remaining / 60)
+        if minutes < 60 {
+            return "\(minutes) min"
+        } else {
+            let hours = minutes / 60
+            let mins = minutes % 60
+            return mins > 0 ? "\(hours)h \(mins)m" : "\(hours)h"
+        }
     }
 
     /// Whether manual override is active (schedule set to ALWAYS)
