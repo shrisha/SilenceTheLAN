@@ -24,11 +24,20 @@ UniFi's firewall rules are incredibly powerful, but:
 ## Features
 
 - **One-tap control** - Block or allow internet instantly
+- **Time extensions** - Long-press for temporary access (15m, 30m, 1h, 2h) with auto-reblock
 - **Grouped by person** - See all rules for each family member together
 - **Schedule-aware** - Shows normal schedule times, preserves them when you override
 - **Configurable prefixes** - Default `Downtime-` and `STL-`, plus up to 3 custom prefixes
 - **Siri Shortcuts** - "Block Rishi in SilenceTheLAN"
 - **Local only** - No cloud, no accounts, everything stays on your network
+
+### Time Extensions
+
+Need to let your kid finish a YouTube video? Long-press any rule to grant temporary access. The rule automatically re-enables when time expires, and you'll get a notification.
+
+<p align="center">
+  <img src="docs/screenshots/extension.png" width="250" alt="Time Extension" />
+</p>
 
 ## Requirements
 
