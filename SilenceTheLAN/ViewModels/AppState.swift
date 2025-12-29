@@ -4,6 +4,7 @@ import SwiftData
 import Combine
 import os.log
 import AppIntents
+import UserNotifications
 
 private let logger = Logger(subsystem: "com.silencethelan", category: "AppState")
 
@@ -488,6 +489,129 @@ final class AppState: ObservableObject {
         try? context.save()
         loadCachedRules()
         logger.info("removeRule: Rule removed, now managing \(self.rules.count) rules")
+    }
+
+    // MARK: - Temporary Allow
+
+    /// Start a temporary allow for a rule
+    func temporaryAllow(_ rule: ACLRule, minutes: Int) async {
+        guard !togglingRuleIds.contains(rule.ruleId) else { return }
+
+        togglingRuleIds.insert(rule.ruleId)
+        defer { togglingRuleIds.remove(rule.ruleId) }
+
+        // Store original state
+        rule.temporaryAllowOriginalEnabled = rule.isEnabled
+        rule.temporaryAllowExpiry = Date().addingTimeInterval(TimeInterval(minutes * 60))
+
+        do {
+            // Disable the rule to allow traffic
+            try await api.toggleRule(ruleId: rule.ruleId, enabled: false)
+            rule.isEnabled = false
+            rule.lastSynced = Date()
+
+            // Schedule notification
+            if let expiry = rule.temporaryAllowExpiry {
+                NotificationService.shared.scheduleTemporaryAllowExpiry(for: rule, at: expiry)
+            }
+
+            try? modelContext?.save()
+
+            // Haptic feedback
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+
+            logger.info("Started temporary allow for \(rule.name) for \(minutes) minutes")
+        } catch {
+            // Rollback on failure
+            rule.temporaryAllowExpiry = nil
+            rule.temporaryAllowOriginalEnabled = nil
+            logger.error("Failed to start temporary allow: \(error.localizedDescription)")
+            errorMessage = "Couldn't allow temporarily. Try again."
+        }
+    }
+
+    /// Extend an active temporary allow
+    func extendTemporaryAllow(_ rule: ACLRule, minutes: Int) async {
+        guard rule.hasActiveTemporaryAllow else { return }
+
+        let baseTime = max(Date(), rule.temporaryAllowExpiry ?? Date())
+        rule.temporaryAllowExpiry = baseTime.addingTimeInterval(TimeInterval(minutes * 60))
+
+        // Reschedule notification
+        NotificationService.shared.cancelNotification(for: rule.ruleId)
+        if let expiry = rule.temporaryAllowExpiry {
+            NotificationService.shared.scheduleTemporaryAllowExpiry(for: rule, at: expiry)
+        }
+
+        try? modelContext?.save()
+
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+
+        logger.info("Extended temporary allow for \(rule.name) by \(minutes) minutes")
+    }
+
+    /// Cancel temporary allow and re-block
+    func cancelTemporaryAllow(_ rule: ACLRule) async {
+        guard rule.temporaryAllowExpiry != nil else { return }
+
+        togglingRuleIds.insert(rule.ruleId)
+        defer { togglingRuleIds.remove(rule.ruleId) }
+
+        await reblockAfterTemporaryAllow(rule)
+
+        // Haptic feedback
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+
+    /// Re-block a rule after temporary allow expires
+    private func reblockAfterTemporaryAllow(_ rule: ACLRule) async {
+        let shouldEnable = rule.temporaryAllowOriginalEnabled ?? true
+
+        // Clear temporary allow state
+        rule.temporaryAllowExpiry = nil
+        rule.temporaryAllowOriginalEnabled = nil
+
+        // Cancel notification
+        NotificationService.shared.cancelNotification(for: rule.ruleId)
+
+        do {
+            if shouldEnable {
+                try await api.toggleRule(ruleId: rule.ruleId, enabled: true)
+                rule.isEnabled = true
+            }
+            rule.lastSynced = Date()
+            try? modelContext?.save()
+
+            logger.info("Re-blocked \(rule.name) after temporary allow")
+        } catch {
+            // Keep expiry set so we retry on next app open
+            rule.temporaryAllowExpiry = Date() // Mark as expired but needing retry
+            logger.error("Failed to re-block after temporary allow: \(error.localizedDescription)")
+            errorMessage = "Couldn't re-block \(rule.displayName). Tap to retry."
+        }
+    }
+
+    /// Check for and handle expired temporary allows (call on app becoming active)
+    func checkExpiredTemporaryAllows() async {
+        let now = Date()
+        let expiredRules = rules.filter { rule in
+            guard let expiry = rule.temporaryAllowExpiry else { return false }
+            return expiry <= now
+        }
+
+        guard !expiredRules.isEmpty else { return }
+
+        for rule in expiredRules {
+            await reblockAfterTemporaryAllow(rule)
+        }
+
+        // Show toast (you can implement this with a published property)
+        let count = expiredRules.count
+        logger.info("Re-blocked \(count) rule(s) after temporary allow expired")
     }
 
     // MARK: - Toggle
