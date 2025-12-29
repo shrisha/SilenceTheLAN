@@ -1,225 +1,112 @@
 # SilenceTheLAN
 
-A SwiftUI iOS app for parents to quickly manage internet access for their kids on UniFi networks.
+**Control your kids' internet with a tap.**
 
-## Overview
+A simple iOS app for parents with UniFi networks. Set up your firewall rules once in UniFi, then use this app to toggle them on/off without touching the UniFi interface.
 
-SilenceTheLAN gives parents instant control over pre-configured "Downtime" firewall rules on their UniFi router. Instead of navigating the full UniFi web interface, toggle internet access for specific family members with a single tap.
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" width="250" alt="Dashboard" />
+  <img src="docs/screenshots/welcome.png" width="250" alt="Welcome" />
+  <img src="docs/screenshots/settings.png" width="250" alt="Settings" />
+</p>
 
-**Key Features:**
+## Why This Exists
+
+I tried Circle, Bark, built-in screen time, and various router solutions. They all fell short - kids found workarounds, the apps were clunky, or they didn't give me the control I needed.
+
+UniFi's firewall rules are incredibly powerful, but:
+- The UI is buried in settings
+- It's easy to mess something up
+- You don't want to hand your phone to your spouse and say "navigate to Settings > Security > Firewall Rules..."
+
+**SilenceTheLAN** lets you set up rules once (the hard part), then toggle them with one tap (the daily part).
+
+## Features
+
 - **One-tap control** - Block or allow internet instantly
-- **Pause/Resume** - Temporarily allow access during scheduled block times
-- **Block Now** - Immediately block access outside scheduled times
-- **Real-time status** - See who's blocked and who's allowed at a glance
-- **Schedule awareness** - Shows normal schedule times even when overridden
-- **Dark mode UI** - Beautiful, modern interface with glassmorphism effects
-
-## How It Works
-
-SilenceTheLAN manages UniFi firewall policies that have names starting with "Downtime" and action set to "BLOCK". The app doesn't create rules - you configure them in UniFi, and the app provides quick toggle access.
-
-### Toggle Behavior
-
-The app intelligently handles toggling based on the rule's current state, schedule, and time of day:
-
-#### ALLOW Action (Currently Blocking → Allow Traffic)
-
-| Current State | Has Original Schedule? | Action Taken | Result |
-|--------------|------------------------|--------------|--------|
-| Blocking via ALWAYS mode | Yes | Restore schedule | Returns to scheduled behavior; if currently inside schedule window, also pauses |
-| Blocking via ALWAYS mode | No | Pause rule | Traffic allowed until manually unpaused |
-| Blocking via schedule (in window) | N/A | Pause rule | Traffic allowed until manually unpaused |
-
-#### BLOCK Action (Currently Allowed → Block Traffic)
-
-| Current State | Time vs Schedule | Has Original Schedule? | Action Taken | Result |
-|--------------|------------------|------------------------|--------------|--------|
-| Paused | Inside original window | Yes (mode=ALWAYS) | Restore schedule + unpause | Schedule blocks traffic |
-| Paused | Inside window | Yes (mode=scheduled) | Unpause | Schedule blocks traffic |
-| Paused | Outside window | Yes | Set ALWAYS + unpause | Blocks immediately |
-| Paused | N/A | No | Set ALWAYS + unpause | Blocks immediately |
-| Allowed (outside schedule) | N/A | Yes | Set ALWAYS (preserve schedule) | Blocks immediately; schedule saved for later |
-| Allowed (outside schedule) | N/A | No | Set ALWAYS | Blocks immediately |
-
-#### Key Concepts
-
-- **Pause**: Disables the rule temporarily (traffic flows)
-- **ALWAYS mode**: Rule blocks 24/7 regardless of schedule
-- **Original schedule**: Preserved when switching to ALWAYS, restored when allowing traffic
-- **Schedule window**: The time range when the rule would normally block (e.g., 11 PM - 7 AM)
+- **Grouped by person** - See all rules for each family member together
+- **Schedule-aware** - Shows normal schedule times, preserves them when you override
+- **Siri Shortcuts** - "Block Rishi in SilenceTheLAN"
+- **Local only** - No cloud, no accounts, everything stays on your network
 
 ## Requirements
 
-- **iOS 17.0+** (uses SwiftData)
-- **UniFi Dream Machine** (UDM, UDM Pro, UDM SE) or **UniFi Cloud Gateway** (UCG Max, UCG Ultra)
-- **Local network access** - iPhone must be on the same network as the UniFi controller
-- **Local UniFi account** - Cloud/SSO accounts with 2FA are not supported
+- **iOS 17.0+**
+- **UniFi Dream Machine** (UDM, UDM Pro, UDM SE) or **Cloud Gateway** (UCG Max, UCG Ultra)
+- iPhone on the **same local network** as your UniFi controller
+- A **local UniFi admin account** (not cloud/SSO - see setup below)
 
-## Setting Up Firewall Policies in UniFi
+## Quick Start
 
-Before using SilenceTheLAN, you need to create firewall policies in your UniFi Console. The app discovers and manages these policies - it doesn't create them.
+### 1. Create firewall rules in UniFi
 
-### Concept
-
-UniFi firewall policies let you block traffic based on source devices, destinations, and schedules. SilenceTheLAN looks for policies with:
-- **Name** starting with `Downtime` (case-insensitive)
+In UniFi Console → Settings → Security → Firewall Rules, create rules with:
+- **Name** starting with `Downtime-` (e.g., `Downtime-Rishi`, `Downtime-Rishi-Games`)
 - **Action** set to `Block`
+- **Schedule** for your normal blocking hours
 
-The app then provides quick toggle access to pause/unpause these rules or override schedules.
+The app groups rules by the name after "Downtime-":
 
-### Naming Convention
+| Rule Name | Shows As |
+|-----------|----------|
+| `Downtime-Rishi` | Rishi → Internet |
+| `Downtime-Rishi-Games` | Rishi → Games |
+| `Downtime-Rohan-YouTube` | Rohan → YouTube |
 
-The app parses rule names to group them by person and activity:
+### 2. Create a local admin account
 
-```
-Downtime-{PersonName}
-Downtime-{PersonName}-{Activity}
-```
+In UniFi Console → Settings → Admins & Users:
+- Create a new admin with **Local Access Only**
+- Cloud/SSO accounts with 2FA won't work
 
-| Rule Name | Person | Activity | Display |
-|-----------|--------|----------|---------|
-| `Downtime-Rishi` | Rishi | Internet | Shows as "Internet" under "Rishi" |
-| `Downtime-Rishi-Games` | Rishi | Games | Shows as "Games" under "Rishi" |
-| `Downtime-Rohan-YouTube` | Rohan | YouTube | Shows as "YouTube" under "Rohan" |
-| `Downtime-Kids` | Kids | Internet | Shows as "Internet" under "Kids" |
+### 3. Install and connect
 
-Rules for the same person are grouped together in the app, making it easy to manage multiple restrictions per family member.
+1. Build from source or install via TestFlight (coming soon)
+2. App auto-discovers your UniFi controller
+3. Log in with your local admin account
+4. Select which rules to manage
+5. Done!
 
-### Creating a Policy
+<p align="center">
+  <img src="docs/screenshots/discovery.png" width="200" alt="Discovery" />
+  <img src="docs/screenshots/login.png" width="200" alt="Login" />
+</p>
 
-1. In UniFi Console, go to **Settings > Security > Firewall Rules**
-2. Click **Create New Rule** and configure:
+## How It Works
 
-| Field | Recommended Setting | Notes |
-|-------|---------------------|-------|
-| **Name** | `Downtime-{Person}` or `Downtime-{Person}-{Activity}` | Must start with "Downtime" |
-| **Action** | `Block` | Required for the app to manage it |
-| **Schedule** | Your normal blocking hours (e.g., 11 PM - 7 AM) | App preserves this when overriding |
-| **Source** | Specific devices or device groups | Select the devices to control |
-| **Destination** | `Any` or specific domains/IPs | What to block |
+The app doesn't create or delete rules - it only toggles existing ones. This is intentional:
 
-### Schedule Configuration
+- **Tap when allowed** → Blocks immediately (sets schedule to "Always")
+- **Tap when blocked** → Allows traffic (pauses the rule or restores schedule)
 
-Set up schedules based on your family's routine:
+Your original schedule is preserved and restored when you toggle back.
 
-| Schedule Type | Example | Use Case |
-|---------------|---------|----------|
-| **Nightly** | 10 PM - 7 AM | School night internet cutoff |
-| **Extended** | 9 PM - 8 AM | Younger kids, earlier bedtime |
-| **Always** | 24/7 | Block specific sites permanently (like gaming during weekdays) |
-| **Custom** | Weekdays only | Different rules for school days vs weekends |
+## Building from Source
 
-The app shows the schedule in each rule card and preserves it when you manually override.
-
-### Best Practices
-
-1. **One rule per person for general internet** - `Downtime-Rishi` blocks all internet for that person
-2. **Separate rules for specific activities** - `Downtime-Rishi-Games` can have different schedules than general internet
-3. **Use device groups in UniFi** - Create groups like "Rishi's Devices" to easily manage multiple devices
-4. **Stagger schedules by age** - Younger kids get earlier cutoffs
-5. **Keep rule names short** - They display better in the app
-
-### Example Setup
-
-For a family with two kids (Rishi and Rohan):
-
-| Rule Name | Schedule | Source | Destination |
-|-----------|----------|--------|-------------|
-| `Downtime-Rishi` | 11 PM - 7 AM | Rishi's Devices | Any |
-| `Downtime-Rishi-Games` | Always | Rishi's Devices | Gaming IPs/Domains |
-| `Downtime-Rohan` | 10 PM - 7 AM | Rohan's Devices | Any |
-| `Downtime-Rohan-YouTube` | 8 PM - 8 AM | Rohan's Devices | YouTube domains |
-| `Downtime-Rohan-Games` | Weekdays 4 PM - 6 PM (allowed), else blocked | Rohan's Devices | Gaming IPs |
-
-In the app, this shows as:
-- **Rishi** (2 rules): Internet, Games
-- **Rohan** (3 rules): Internet, YouTube, Games
-
-## Setup
-
-### 1. Create Firewall Policies
-
-Follow the [Setting Up Firewall Policies](#setting-up-firewall-policies-in-unifi) section above to create your rules in UniFi.
-
-### 2. Create a Local Account
-
-SilenceTheLAN uses session-based authentication. You need a local UniFi account:
-
-1. In UniFi Console, go to **Settings > Admins & Users**
-2. Create a new admin with **Local Access Only**
-3. Use a strong password (this stays on your local network)
-
-### 3. Configure the App
-
-1. Launch SilenceTheLAN
-2. The app will auto-discover your UniFi controller, or enter the IP manually
-3. Enter your local account credentials
-4. Select which "Downtime" rules to manage
-5. Start controlling!
-
-## Tech Stack
-
-- **SwiftUI** - Modern declarative UI
-- **SwiftData** - Local persistence for rules and settings
-- **Async/Await** - Clean asynchronous networking
-- **UniFi v2 API** - Direct communication with UniFi controller
-
-## Architecture
-
-```
-SilenceTheLAN/
-├── App/
-│   └── SilenceTheLANApp.swift
-├── Models/
-│   ├── AppConfiguration.swift    # SwiftData model for settings
-│   └── ACLRule.swift             # SwiftData model for firewall rules
-├── Services/
-│   ├── UniFiAPIService.swift     # UniFi API client
-│   ├── KeychainService.swift     # Secure credential storage
-│   └── NetworkMonitor.swift      # Reachability checking
-├── ViewModels/
-│   ├── AppState.swift            # Main app state
-│   └── SetupViewModel.swift      # Onboarding flow state
-├── Views/
-│   ├── Dashboard/                # Main control screen
-│   ├── Onboarding/               # Setup flow screens
-│   └── Settings/                 # Settings and rule management
-└── Utilities/
-    ├── Theme.swift               # Colors and styling
-    └── ViewModifiers.swift       # Custom SwiftUI modifiers
+```bash
+git clone https://github.com/shrisha/SilenceTheLAN.git
+cd SilenceTheLAN
+open SilenceTheLAN.xcodeproj
 ```
 
-## API Reference
-
-SilenceTheLAN uses the UniFi Network Application v2 API:
-
-- **Authentication**: `POST /api/auth/login` with session cookies
-- **List Policies**: `GET /proxy/network/v2/api/site/{site}/firewall-policies`
-- **Update Policy**: `PUT /proxy/network/v2/api/site/{site}/firewall-policies/{id}`
-- **Batch Update**: `PUT /proxy/network/v2/api/site/{site}/firewall-policies/batch`
-
-The batch endpoint is used for pause/unpause operations as it allows partial updates.
-
-## Security
-
-- Credentials stored in iOS Keychain (not in app storage)
-- All communication over HTTPS (self-signed cert handling for local controllers)
-- No cloud connectivity - everything stays on your local network
-- No telemetry or analytics
+Build and run on your device (simulator won't be able to reach your UniFi controller).
 
 ## Limitations
 
-- Only works on local network (no remote access)
-- Requires local UniFi account (no SSO/cloud accounts)
-- Only manages existing "Downtime-*" BLOCK rules
-- Cannot create or delete firewall rules (by design)
+- **Local network only** - No remote access (your UniFi controller isn't exposed to the internet, and neither is this app)
+- **Local accounts only** - Cloud/SSO with 2FA not supported
+- **iOS only** - No Android version (PRs welcome!)
+- **Read-only rule management** - Cannot create/delete rules, only toggle them
 
 ## License
 
 MIT License - See [LICENSE](LICENSE) for details.
 
+## Contributing
+
+Issues and PRs welcome! This is a personal project solving my own problem, but happy to make it useful for others.
+
 ## Acknowledgments
 
 - Built with SwiftUI and SwiftData
-- Inspired by the need for quick parental controls without opening the full UniFi app
 - UniFi and UniFi Network Application are trademarks of Ubiquiti Inc.
