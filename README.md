@@ -5,8 +5,8 @@
 A simple iOS app for parents with UniFi networks. Set up your firewall rules once in UniFi, then use this app to toggle them on/off without touching the UniFi interface.
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" width="250" alt="Dashboard" />
   <img src="docs/screenshots/welcome.png" width="250" alt="Welcome" />
+  <img src="docs/screenshots/dashboard.png" width="250" alt="Dashboard" />
   <img src="docs/screenshots/settings.png" width="250" alt="Settings" />
 </p>
 
