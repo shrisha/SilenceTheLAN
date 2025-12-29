@@ -89,7 +89,7 @@ cd SilenceTheLAN
 open SilenceTheLAN.xcodeproj
 ```
 
-Build and run on your device (simulator won't be able to reach your UniFi controller).
+Build and run on your device or simulator (depending on your Mac/Safari/Network settings, Simulator may not be able to reach your UniFi controller).
 
 ## Limitations
 
