@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 1280px;
+      height: 640px;
+      background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #0f0f1a 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Subtle grid pattern */
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image:
+        linear-gradient(rgba(0, 255, 136, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 136, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* Glow effect */
+    .glow {
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      background: radial-gradient(circle, rgba(0, 255, 136, 0.15) 0%, transparent 70%);
+      top: 50%;
+      left: 30%;
+      transform: translate(-50%, -50%);
+      filter: blur(60px);
+    }
+
+    .glow-2 {
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, rgba(138, 43, 226, 0.1) 0%, transparent 70%);
+      top: 30%;
+      right: 20%;
+      filter: blur(50px);
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 60px;
+      padding: 60px;
+    }
+
+    .icon-container {
+      width: 180px;
+      height: 180px;
+      background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(0, 255, 136, 0.05) 100%);
+      border-radius: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(0, 255, 136, 0.3);
+      box-shadow:
+        0 0 40px rgba(0, 255, 136, 0.2),
+        inset 0 0 30px rgba(0, 255, 136, 0.1);
+    }
+
+    .icon {
+      font-size: 90px;
+    }
+
+    .content {
+      flex: 1;
+    }
+
+    .title {
+      font-size: 72px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -2px;
+      margin-bottom: 16px;
+      text-shadow: 0 0 40px rgba(0, 255, 136, 0.3);
+    }
+
+    .title span {
+      color: #00ff88;
+    }
+
+    .tagline {
+      font-size: 32px;
+      color: rgba(255, 255, 255, 0.7);
+      font-weight: 400;
+      margin-bottom: 30px;
+    }
+
+    .features {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .feature {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 18px;
+      color: rgba(255, 255, 255, 0.6);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 10px 18px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .feature-icon {
+      font-size: 16px;
+    }
+
+    .badge {
+      position: absolute;
+      bottom: 40px;
+      right: 50px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 18px;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      background: #00ff88;
+      border-radius: 50%;
+      box-shadow: 0 0 10px #00ff88;
+    }
+  </style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="glow-2"></div>
+
+  <div class="container">
+    <div class="icon-container">
+      <span class="icon">📵</span>
+    </div>
+
+    <div class="content">
+      <h1 class="title">Silence<span>The</span>LAN</h1>
+      <p class="tagline">Control your kids' internet with a tap.</p>
+
+      <div class="features">
+        <div class="feature">
+          <span class="feature-icon">🔘</span>
+          One-tap toggle
+        </div>
+        <div class="feature">
+          <span class="feature-icon">📱</span>
+          UniFi + iOS
+        </div>
+        <div class="feature">
+          <span class="feature-icon">🗣️</span>
+          Siri Shortcuts
+        </div>
+        <div class="feature">
+          <span class="feature-icon">🏠</span>
+          100% Local
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="badge">
+    <span class="badge-dot"></span>
+    Open Source
+  </div>
+</body>
+</html>

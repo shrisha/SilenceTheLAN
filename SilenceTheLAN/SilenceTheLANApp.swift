@@ -40,7 +40,9 @@ struct SilenceTheLANApp: App {
                 .environmentObject(appState)
                 .preferredColorScheme(.dark)
                 .onChange(of: scenePhase) { oldPhase, newPhase in
-                    if newPhase == .active {
+                    // Only check when returning from background, not on initial launch
+                    // This avoids racing with initial data load
+                    if oldPhase == .background && newPhase == .active {
                         Task {
                             await appState.checkExpiredTemporaryAllows()
                         }
