@@ -21,11 +21,11 @@ final class NetworkMonitor: ObservableObject {
     private var isCheckingReachability = false
     private var pendingReachabilityCheck = false
 
-    // Shared session for reachability checks
+    // Shared session for reachability checks - use short timeout for quick checks
     private lazy var reachabilitySession: URLSession = {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 3
-        config.timeoutIntervalForResource = 3
+        config.timeoutIntervalForRequest = 2  // Reduced from 3 for faster checks
+        config.timeoutIntervalForResource = 2
         return URLSession(
             configuration: config,
             delegate: SSLTrustDelegate(),
@@ -96,47 +96,58 @@ final class NetworkMonitor: ObservableObject {
         await performReachabilityCheck(host: host)
     }
 
-    /// Actually perform the reachability check
+    /// Actually perform the reachability check - tries endpoints in parallel for speed
     private func performReachabilityCheck(host: String) async {
         logger.info("performReachabilityCheck starting for host: \(host)")
 
-        // Try endpoints in order of reliability for UDM Pro
+        // Try endpoints in parallel - first success wins
         let endpoints = [
             "https://\(host)/proxy/network/api/s/default/self",  // Network app API - most reliable
             "https://\(host)/",  // Root page
             "https://\(host)/api/system/info"  // UniFi OS API - can be slow/timeout
         ]
 
-        for endpoint in endpoints {
-            guard let url = URL(string: endpoint) else { continue }
+        // Use TaskGroup to check all endpoints in parallel
+        let result = await withTaskGroup(of: (String, Int?).self) { group in
+            for endpoint in endpoints {
+                group.addTask {
+                    guard let url = URL(string: endpoint) else { return (endpoint, nil) }
 
-            do {
-                var request = URLRequest(url: url)
-                request.httpMethod = "GET"
-                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                    do {
+                        var request = URLRequest(url: url)
+                        request.httpMethod = "GET"
+                        request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-                let (_, response) = try await reachabilitySession.data(for: request)
+                        let (_, response) = try await self.reachabilitySession.data(for: request)
 
-                if let httpResponse = response as? HTTPURLResponse {
-                    let statusCode = httpResponse.statusCode
-                    // Any response (even 401/403) means the server is reachable
-                    let reachable = (200...599).contains(statusCode)
-                    if reachable {
-                        logger.info("performReachabilityCheck: \(endpoint) responded with \(statusCode), isReachable=true")
-                        isReachable = true
-                        return
+                        if let httpResponse = response as? HTTPURLResponse {
+                            return (endpoint, httpResponse.statusCode)
+                        }
+                    } catch {
+                        // Endpoint failed
                     }
+                    return (endpoint, nil)
                 }
-            } catch {
-                // Try next endpoint
-                logger.info("performReachabilityCheck: \(endpoint) failed - \(error.localizedDescription)")
-                continue
             }
+
+            // Return the first successful result (any status code 200-599 means reachable)
+            for await (endpoint, statusCode) in group {
+                if let code = statusCode, (200...599).contains(code) {
+                    logger.info("performReachabilityCheck: \(endpoint) responded with \(code), isReachable=true")
+                    // Cancel remaining tasks
+                    group.cancelAll()
+                    return true
+                }
+            }
+            return false
         }
 
-        // All endpoints failed
-        logger.warning("performReachabilityCheck: All endpoints failed, isReachable=false")
-        isReachable = false
+        if result {
+            isReachable = true
+        } else {
+            logger.warning("performReachabilityCheck: All endpoints failed, isReachable=false")
+            isReachable = false
+        }
     }
 }
 
