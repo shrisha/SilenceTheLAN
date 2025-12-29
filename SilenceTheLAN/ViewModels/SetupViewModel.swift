@@ -193,28 +193,29 @@ final class SetupViewModel: ObservableObject {
                 logger.debug("loadRules: Rule '\(rule.name)' (enabled: \(rule.enabled), action: \(rule.action))")
             }
 
-            // Filter to "downtime" BLOCK rules (case-insensitive)
-            // Only show rules that block traffic - this is what we want to toggle
-            let blockingActions = ["BLOCK", "DROP", "REJECT"]
-            availableFirewallRules = allFirewallRules.filter { rule in
-                rule.name.lowercased().hasPrefix("downtime") &&
-                blockingActions.contains(rule.action.uppercased())
-            }
+            // Filter to rules matching configured prefixes with BLOCK action
+            let matcher = RulePrefixMatcher.shared
+            availableFirewallRules = matcher.filterBlockingRules(
+                allFirewallRules,
+                getName: { $0.name },
+                getAction: { $0.action }
+            )
 
             if availableFirewallRules.isEmpty {
                 if allFirewallRules.isEmpty {
                     errorMessage = "No firewall rules found. Make sure you have firewall rules configured in UniFi."
                 } else {
-                    // Check if there are downtime rules but they're not BLOCK rules
-                    let downtimeRules = allFirewallRules.filter { $0.name.lowercased().hasPrefix("downtime") }
-                    if downtimeRules.isEmpty {
-                        errorMessage = "Found \(allFirewallRules.count) firewall rules, but none with 'downtime' prefix.\n\nCreate rules starting with 'Downtime' (e.g., 'Downtime-Kids') that BLOCK traffic."
+                    // Check if there are matching rules but they're not BLOCK rules
+                    let matchingRules = allFirewallRules.filter { matcher.matches($0.name) }
+                    let prefixList = matcher.prefixes.joined(separator: ", ")
+                    if matchingRules.isEmpty {
+                        errorMessage = "Found \(allFirewallRules.count) firewall rules, but none with configured prefixes (\(prefixList)).\n\nCreate rules starting with one of these prefixes (e.g., 'Downtime-Kids' or 'STL-Kids') that BLOCK traffic."
                     } else {
-                        errorMessage = "Found \(downtimeRules.count) 'downtime' rules, but none are BLOCK rules.\n\nMake sure your Downtime rules have action set to BLOCK."
+                        errorMessage = "Found \(matchingRules.count) matching rules, but none are BLOCK rules.\n\nMake sure your rules have action set to BLOCK."
                     }
                 }
             } else {
-                logger.info("loadRules: Found \(self.availableFirewallRules.count) 'downtime' BLOCK firewall rules")
+                logger.info("loadRules: Found \(self.availableFirewallRules.count) matching BLOCK firewall rules")
             }
         } catch {
             logger.error("loadRules: Firewall API failed: \(error.localizedDescription)")

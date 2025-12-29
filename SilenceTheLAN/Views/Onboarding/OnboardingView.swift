@@ -906,11 +906,7 @@ struct RuleSelectionCard: View {
     }
 
     private func displayName(for name: String) -> String {
-        let prefix = "downtime-"
-        if name.lowercased().hasPrefix(prefix) {
-            return String(name.dropFirst(prefix.count))
-        }
-        return name
+        RulePrefixMatcher.shared.displayName(for: name)
     }
 }
 
@@ -965,11 +961,7 @@ struct FirewallRuleSelectionCard: View {
     }
 
     private func displayName(for name: String) -> String {
-        let prefix = "downtime-"
-        if name.lowercased().hasPrefix(prefix) {
-            return String(name.dropFirst(prefix.count))
-        }
-        return name
+        RulePrefixMatcher.shared.displayName(for: name)
     }
 
     private func actionDisplayName(for action: String) -> String {

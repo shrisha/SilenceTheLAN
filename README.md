@@ -26,6 +26,7 @@ UniFi's firewall rules are incredibly powerful, but:
 - **One-tap control** - Block or allow internet instantly
 - **Grouped by person** - See all rules for each family member together
 - **Schedule-aware** - Shows normal schedule times, preserves them when you override
+- **Configurable prefixes** - Default `Downtime-` and `STL-`, plus up to 3 custom prefixes
 - **Siri Shortcuts** - "Block Rishi in SilenceTheLAN"
 - **Local only** - No cloud, no accounts, everything stays on your network
 
@@ -41,17 +42,19 @@ UniFi's firewall rules are incredibly powerful, but:
 ### 1. Create firewall rules in UniFi
 
 In UniFi Console → Settings → Security → Firewall Rules, create rules with:
-- **Name** starting with `Downtime-` (e.g., `Downtime-Rishi`, `Downtime-Rishi-Games`)
+- **Name** starting with `Downtime-` or `STL-` (e.g., `Downtime-Rishi`, `STL-Rishi-Games`)
 - **Action** set to `Block`
 - **Schedule** for your normal blocking hours
 
-The app groups rules by the name after "Downtime-":
+The app detects rules by prefix and groups them by person:
 
 | Rule Name | Shows As |
 |-----------|----------|
 | `Downtime-Rishi` | Rishi → Internet |
 | `Downtime-Rishi-Games` | Rishi → Games |
-| `Downtime-Rohan-YouTube` | Rohan → YouTube |
+| `STL-Rohan-YouTube` | Rohan → YouTube |
+
+**Custom prefixes:** You can add up to 3 additional prefixes in Settings → Rule Prefixes.
 
 ### 2. Create a local admin account
 

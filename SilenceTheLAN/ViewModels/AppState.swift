@@ -55,6 +55,9 @@ final class AppState: ObservableObject {
            config.isConfigured {
             logger.info("loadConfiguration: Found config - host=\(config.unifiHost), siteId=\(config.siteId), usingFirewallRules=\(config.usingFirewallRules)")
 
+            // Configure rule prefix matcher with saved prefixes
+            RulePrefixMatcher.configure(with: config)
+
             // Check if credentials exist - if not, user needs to log in
             guard KeychainService.shared.hasCredentials else {
                 logger.info("loadConfiguration: No credentials found, user needs to log in")
@@ -147,6 +150,55 @@ final class AppState: ObservableObject {
 
         // Set unconfigured to trigger login flow
         isConfigured = false
+    }
+
+    // MARK: - Rule Prefixes
+
+    /// Get custom prefixes from configuration
+    var customPrefixes: [String] {
+        guard let context = modelContext else { return [] }
+        let descriptor = FetchDescriptor<AppConfiguration>()
+        return (try? context.fetch(descriptor).first?.customPrefixes) ?? []
+    }
+
+    /// Update custom prefixes and refresh the shared matcher
+    func updateCustomPrefixes(_ prefixes: [String]) {
+        guard let context = modelContext else { return }
+        let descriptor = FetchDescriptor<AppConfiguration>()
+        if let config = try? context.fetch(descriptor).first {
+            config.customPrefixes = prefixes
+            try? context.save()
+
+            // Update the shared matcher
+            RulePrefixMatcher.configure(with: config)
+            logger.info("Updated custom prefixes: \(prefixes)")
+        }
+    }
+
+    /// Add a custom prefix (max 3)
+    func addCustomPrefix(_ prefix: String) {
+        var current = customPrefixes
+        let trimmed = prefix.trimmingCharacters(in: .whitespaces)
+
+        // Validate: non-empty, not a duplicate, and under limit
+        guard !trimmed.isEmpty,
+              !current.contains(where: { $0.lowercased() == trimmed.lowercased() }),
+              !RulePrefixMatcher.defaultPrefixes.contains(where: { $0.lowercased() == trimmed.lowercased() }),
+              current.count < RulePrefixMatcher.maxCustomPrefixes else {
+            return
+        }
+
+        // Ensure prefix ends with hyphen for consistency
+        let normalized = trimmed.hasSuffix("-") ? trimmed : trimmed + "-"
+        current.append(normalized)
+        updateCustomPrefixes(current)
+    }
+
+    /// Remove a custom prefix
+    func removeCustomPrefix(_ prefix: String) {
+        var current = customPrefixes
+        current.removeAll { $0 == prefix }
+        updateCustomPrefixes(current)
     }
 
     // MARK: - Rules

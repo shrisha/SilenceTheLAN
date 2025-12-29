@@ -238,12 +238,13 @@ struct ManageRulesView: View {
     }
 
     private var unmangedRules: [FirewallPolicyDTO] {
-        let blockingActions = ["BLOCK", "DROP", "REJECT"]
-        return availableRules.filter { dto in
-            !managedRuleIds.contains(dto.id) &&
-            dto.name.lowercased().contains("downtime") &&
-            blockingActions.contains(dto.action.uppercased())
-        }
+        let matcher = RulePrefixMatcher.shared
+        let matchingRules = matcher.filterBlockingRules(
+            availableRules,
+            getName: { $0.name },
+            getAction: { $0.action }
+        )
+        return matchingRules.filter { !managedRuleIds.contains($0.id) }
     }
 
     // MARK: - Actions
@@ -379,11 +380,7 @@ struct AvailableRuleRow: View {
     let onAdd: () -> Void
 
     private var displayName: String {
-        let prefix = "downtime-"
-        if rule.name.lowercased().hasPrefix(prefix) {
-            return String(rule.name.dropFirst(prefix.count))
-        }
-        return rule.name
+        RulePrefixMatcher.shared.displayName(for: rule.name)
     }
 
     private var scheduleText: String {

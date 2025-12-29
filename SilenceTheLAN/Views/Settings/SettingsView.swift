@@ -72,17 +72,35 @@ struct SettingsView: View {
 
                         // Rules Section
                         SettingsSection(title: "RULES") {
-                            NavigationLink {
-                                ManageRulesView()
-                                    .environmentObject(appState)
-                            } label: {
-                                SettingsRow(
-                                    icon: "list.bullet.rectangle",
-                                    iconColor: Color.theme.neonGreen,
-                                    title: "Manage Rules",
-                                    value: "\(appState.rules.count)",
-                                    showChevron: true
-                                )
+                            VStack(spacing: 0) {
+                                NavigationLink {
+                                    ManageRulesView()
+                                        .environmentObject(appState)
+                                } label: {
+                                    SettingsRow(
+                                        icon: "list.bullet.rectangle",
+                                        iconColor: Color.theme.neonGreen,
+                                        title: "Manage Rules",
+                                        value: "\(appState.rules.count)",
+                                        showChevron: true
+                                    )
+                                }
+
+                                Divider()
+                                    .background(Color.theme.glassStroke)
+
+                                NavigationLink {
+                                    ManagePrefixesView()
+                                        .environmentObject(appState)
+                                } label: {
+                                    SettingsRow(
+                                        icon: "tag",
+                                        iconColor: Color.theme.neonPurple,
+                                        title: "Rule Prefixes",
+                                        value: "\(RulePrefixMatcher.shared.prefixes.count)",
+                                        showChevron: true
+                                    )
+                                }
                             }
                         }
 

@@ -36,35 +36,20 @@ final class ACLRule {
     var protocolFilterJSON: String?
     var enforcingDeviceFilterJSON: String?
 
-    /// Display name extracted from rule name (e.g., "Downtime-Rishi" -> "Rishi")
+    /// Display name extracted from rule name (e.g., "Downtime-Rishi" -> "Rishi", "STL-Rishi" -> "Rishi")
     var displayName: String {
-        let prefix = "downtime-"
-        if name.lowercased().hasPrefix(prefix) {
-            return String(name.dropFirst(prefix.count))
-        }
-        return name
+        RulePrefixMatcher.shared.displayName(for: name)
     }
 
     /// Person name extracted from rule name (e.g., "Downtime-Rishi-Games" -> "Rishi")
     var personName: String {
-        let display = displayName
-        // Split by hyphen or space to get the first part (person name)
-        let separators = CharacterSet(charactersIn: "- ")
-        let parts = display.components(separatedBy: separators)
-        return parts.first ?? display
+        RulePrefixMatcher.shared.personName(for: name)
     }
 
     /// Activity name extracted from rule name (e.g., "Downtime-Rishi-Games" -> "Games")
     /// Returns "Internet" if no activity specified
     var activityName: String {
-        let display = displayName
-        let separators = CharacterSet(charactersIn: "- ")
-        let parts = display.components(separatedBy: separators)
-        if parts.count > 1 {
-            // Join remaining parts as the activity (handles multi-word activities)
-            return parts.dropFirst().joined(separator: " ")
-        }
-        return "Internet"
+        RulePrefixMatcher.shared.activityName(for: name)
     }
 
     /// Whether manual override is active (schedule set to ALWAYS)
