@@ -2,7 +2,7 @@ import AppIntents
 import SwiftData
 import os.log
 
-private let logger = Logger(subsystem: "com.boorah.silencethelan", category: "PersonEntity")
+private let logger = Logger(subsystem: "com.boorah.stl", category: "PersonEntity")
 
 struct PersonEntity: AppEntity {
     var id: String
