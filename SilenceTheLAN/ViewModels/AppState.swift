@@ -22,6 +22,49 @@ final class AppState: NSObject, ObservableObject {
     @Published var rules: [ACLRule] = []
     @Published var togglingRuleIds: Set<String> = []
 
+    // MARK: - Audit Trail
+
+    /// Generate audit trail description for transparency in UniFi Console
+    private func auditDescription(action: String, context: String? = nil) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        let timeStr = formatter.string(from: Date())
+
+        if let ctx = context {
+            return "App: \(action) at \(timeStr) (\(ctx))"
+        } else {
+            return "App: \(action) at \(timeStr)"
+        }
+    }
+
+    /// Format time string for display (e.g., "23:00" -> "11 PM")
+    private func formatScheduleTime(_ time: String) -> String {
+        let parts = time.split(separator: ":")
+        guard parts.count >= 2, let hours = Int(parts[0]), let mins = Int(parts[1]) else {
+            return time
+        }
+        let period = hours >= 12 ? "PM" : "AM"
+        let displayHours = hours == 0 ? 12 : (hours > 12 ? hours - 12 : hours)
+        if mins == 0 {
+            return "\(displayHours) \(period)"
+        }
+        return "\(displayHours):\(String(format: "%02d", mins)) \(period)"
+    }
+
+    /// Update rule description for audit trail (fire-and-forget)
+    private func updateAuditTrail(ruleId: String, description: String) {
+        Task {
+            do {
+                let update = ["description": description]
+                _ = try await api.updateFirewallPolicy(policyId: ruleId, update: update)
+                logger.info("Updated audit trail: \(description)")
+            } catch {
+                logger.warning("Failed to update audit trail: \(error.localizedDescription)")
+                // Don't block the main operation if audit update fails
+            }
+        }
+    }
+
     // MARK: - Services
 
     let api = UniFiAPIService()
@@ -466,6 +509,15 @@ final class AppState: NSObject, ObservableObject {
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
 
+            // Update audit trail
+            if let expiry = rule.temporaryAllowExpiry {
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateFormat = "h:mm a"
+                let expiryStr = timeFormatter.string(from: expiry)
+                let auditMsg = auditDescription(action: "Allowed until \(expiryStr)", context: "\(minutes)m extension")
+                updateAuditTrail(ruleId: rule.ruleId, description: auditMsg)
+            }
+
             logger.info("Started temporary allow for \(rule.name) for \(minutes) minutes")
         } catch {
             // Rollback on failure
@@ -494,6 +546,15 @@ final class AppState: NSObject, ObservableObject {
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
+
+        // Update audit trail
+        if let expiry = rule.temporaryAllowExpiry {
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            let expiryStr = timeFormatter.string(from: expiry)
+            let auditMsg = auditDescription(action: "Extended to \(expiryStr)", context: "+\(minutes)m")
+            updateAuditTrail(ruleId: rule.ruleId, description: auditMsg)
+        }
 
         logger.info("Extended temporary allow for \(rule.name) by \(minutes) minutes")
     }
@@ -531,6 +592,10 @@ final class AppState: NSObject, ObservableObject {
             }
             rule.lastSynced = Date()
             try? modelContext?.save()
+
+            // Update audit trail
+            let auditMsg = auditDescription(action: "Re-blocked", context: "extension expired")
+            updateAuditTrail(ruleId: rule.ruleId, description: auditMsg)
 
             logger.info("Re-blocked \(rule.name) after temporary allow")
         } catch {
@@ -687,6 +752,27 @@ final class AppState: NSObject, ObservableObject {
             // Success haptic
             let successGenerator = UINotificationFeedbackGenerator()
             successGenerator.notificationOccurred(.success)
+
+            // Update audit trail for transparency
+            let auditMsg: String
+            if rule.isCurrentlyBlocking {
+                // Now blocking
+                if let start = rule.originalScheduleStart, let end = rule.originalScheduleEnd {
+                    let startFmt = formatScheduleTime(start)
+                    let endFmt = formatScheduleTime(end)
+                    auditMsg = auditDescription(action: "Blocked", context: "override, normally \(startFmt) - \(endFmt)")
+                } else {
+                    auditMsg = auditDescription(action: "Blocked", context: "override")
+                }
+            } else {
+                // Now allowing
+                if rule.scheduleMode.uppercased() == "EVERY_DAY" {
+                    auditMsg = auditDescription(action: "Allowed", context: "restored to schedule")
+                } else {
+                    auditMsg = auditDescription(action: "Allowed", context: "paused")
+                }
+            }
+            updateAuditTrail(ruleId: rule.ruleId, description: auditMsg)
 
             rule.lastSynced = Date()
             try? modelContext?.save()
