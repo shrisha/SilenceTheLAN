@@ -3,7 +3,7 @@ import Network
 import Combine
 import os.log
 
-private let logger = Logger(subsystem: "io.github.shrisha.silencethelan", category: "NetworkMonitor")
+private let logger = Logger(subsystem: "com.boorah.silencethelan", category: "NetworkMonitor")
 
 @MainActor
 final class NetworkMonitor: ObservableObject {

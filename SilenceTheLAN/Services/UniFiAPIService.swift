@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-private let logger = Logger(subsystem: "io.github.shrisha.silencethelan", category: "UniFiAPI")
+private let logger = Logger(subsystem: "com.boorah.silencethelan", category: "UniFiAPI")
 
 // MARK: - Firewall Policy Types (v2 API - zone-based rules)
 
