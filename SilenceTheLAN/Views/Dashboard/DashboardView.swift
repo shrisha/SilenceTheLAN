@@ -179,45 +179,14 @@ struct DashboardView: View {
     // MARK: - Header
 
     private var headerView: some View {
-        VStack(spacing: 8) {
-            // Title row with settings
+        VStack(spacing: 16) {
+            // Top row: Title + Settings
             HStack(alignment: .center) {
                 Text("Rules")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
 
                 Spacer()
-
-                // Quick stats inline
-                HStack(spacing: 10) {
-                    StatPill(
-                        icon: "wifi.slash",
-                        count: appState.rules.filter { $0.isCurrentlyBlocking }.count,
-                        label: "Blocked",
-                        color: Color.theme.neonRed
-                    )
-                    StatPill(
-                        icon: "checkmark.circle.fill",
-                        count: appState.rules.filter { !$0.isCurrentlyBlocking }.count,
-                        label: "Allowed",
-                        color: Color.theme.neonGreen
-                    )
-                }
-
-                // Refresh button
-                Button {
-                    Task {
-                        await appState.refreshRules()
-                    }
-                } label: {
-                    Image(systemName: appState.isLoading ? "arrow.clockwise.circle.fill" : "arrow.clockwise")
-                        .font(.title3)
-                        .foregroundColor(Color.theme.textSecondary)
-                        .padding(8)
-                        .rotationEffect(.degrees(appState.isLoading ? 360 : 0))
-                        .animation(appState.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: appState.isLoading)
-                }
-                .disabled(appState.isLoading)
 
                 Button {
                     showSettings = true
@@ -228,6 +197,87 @@ struct DashboardView: View {
                         .padding(8)
                 }
             }
+
+            // Bottom row: Tappable stats bar (tap to refresh)
+            Button {
+                Task {
+                    await appState.refreshRules()
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    // Blocked stat
+                    HStack(spacing: 8) {
+                        Image(systemName: "wifi.slash")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Color.theme.neonRed)
+
+                        Text("\(appState.rules.filter { $0.isCurrentlyBlocking }.count)")
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+
+                        Text("Blocked")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(Color.theme.textSecondary)
+                    }
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.theme.neonRed.opacity(0.12))
+                    )
+
+                    // Divider
+                    Circle()
+                        .fill(Color.theme.textTertiary.opacity(0.3))
+                        .frame(width: 4, height: 4)
+
+                    // Allowed stat
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Color.theme.neonGreen)
+
+                        Text("\(appState.rules.filter { !$0.isCurrentlyBlocking }.count)")
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+
+                        Text("Allowed")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(Color.theme.textSecondary)
+                    }
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.theme.neonGreen.opacity(0.12))
+                    )
+
+                    Spacer()
+
+                    // Subtle refresh indicator
+                    Image(systemName: appState.isLoading ? "arrow.clockwise.circle.fill" : "arrow.clockwise")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Color.theme.textTertiary)
+                        .rotationEffect(.degrees(appState.isLoading ? 360 : 0))
+                        .animation(
+                            appState.isLoading ?
+                                .linear(duration: 1).repeatForever(autoreverses: false) :
+                                .default,
+                            value: appState.isLoading
+                        )
+                }
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.white.opacity(0.03))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(ScaleButtonStyle())
+            .disabled(appState.isLoading)
         }
     }
 
@@ -621,6 +671,17 @@ struct CustomToggle: View {
                 .offset(x: isOn ? 12 : -12)
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isOn)
+    }
+}
+
+// MARK: - Button Styles
+
+/// Custom button style for subtle press feedback
+struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
 
