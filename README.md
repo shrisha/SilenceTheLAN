@@ -33,12 +33,19 @@ UniFi's firewall rules are incredibly powerful, but:
 
 ### Time Extensions
 
-Long-press any rule for temporary exceptions:
+Long-press any rule for smart temporary exceptions:
 
-- **Currently blocking?** "Allow for X minutes" - traffic flows, then auto-reblocks
-- **Not yet blocking?** "Delay block by X minutes" - schedule start time is postponed
+- **Currently blocking?** "Allow for X minutes" - Pauses the rule temporarily, traffic flows freely until the timer expires, then auto-reblocks
+- **Not yet blocking?** "Delay block by X minutes" - Pushes the schedule start time forward (e.g., 9 AM → 9:30 AM), automatically restores original schedule when delay expires
 
-Perfect for "Can I have 30 more minutes before bedtime?" scenarios. You'll get a notification when the extension expires.
+The app intelligently detects which scenario applies and adjusts behavior accordingly. Perfect for "Can I have 30 more minutes before bedtime?" scenarios.
+
+Extensions can be:
+- **Extended** - Add more time while active
+- **Cancelled** - Restore original state immediately
+- **Auto-restored** - Receive a notification when time expires
+
+All actions are logged in the UniFi rule description for transparency.
 
 <p align="center">
   <img src="docs/screenshots/extension.png" width="250" alt="Time Extension" />

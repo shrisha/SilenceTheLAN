@@ -30,9 +30,13 @@ final class ACLRule {
     var isSelected: Bool
     var lastSynced: Date
 
-    // Temporary allow tracking
+    // Temporary allow tracking (for currently blocking rules)
     var temporaryAllowExpiry: Date?           // When temp allow expires (nil = not active)
     var temporaryAllowOriginalEnabled: Bool?  // Was rule enabled before temp allow?
+
+    // Temporary delay tracking (for rules not yet blocking)
+    var temporaryDelayExpiry: Date?           // When delayed schedule expires (nil = not active)
+    var temporaryDelayOriginalStart: String?  // Original schedule start time to restore
 
     // Store complex filter objects as JSON for PUT requests
     var sourceFilterJSON: String?
@@ -81,6 +85,31 @@ final class ACLRule {
         }
     }
 
+    /// Whether a temporary delay is currently active
+    var hasActiveTemporaryDelay: Bool {
+        guard let expiry = temporaryDelayExpiry else { return false }
+        return expiry > Date()
+    }
+
+    /// Time remaining for temporary delay (nil if not active)
+    var temporaryDelayTimeRemaining: TimeInterval? {
+        guard let expiry = temporaryDelayExpiry, expiry > Date() else { return nil }
+        return expiry.timeIntervalSinceNow
+    }
+
+    /// Formatted time remaining string for delay (e.g., "23 min" or "1h 30m")
+    var temporaryDelayTimeRemainingFormatted: String? {
+        guard let remaining = temporaryDelayTimeRemaining else { return nil }
+        let minutes = Int(remaining / 60)
+        if minutes < 60 {
+            return "\(minutes) min"
+        } else {
+            let hours = minutes / 60
+            let mins = minutes % 60
+            return mins > 0 ? "\(hours)h \(mins)m" : "\(hours)h"
+        }
+    }
+
     /// Whether manual override is active (schedule set to ALWAYS)
     var isOverrideActive: Bool {
         scheduleMode.uppercased() == "ALWAYS"
@@ -110,6 +139,13 @@ final class ACLRule {
 
     /// Human-readable schedule summary
     var scheduleSummary: String {
+        // If delay is active, show delayed schedule
+        if hasActiveTemporaryDelay {
+            if let start = scheduleStart, let originalStart = temporaryDelayOriginalStart {
+                return "Delayed to \(formatTime(start)) (normally \(formatTime(originalStart)))"
+            }
+        }
+
         // If paused, show schedule times only (ALLOWED badge conveys paused state)
         if !isEnabled {
             if let start = scheduleStart, let end = scheduleEnd {

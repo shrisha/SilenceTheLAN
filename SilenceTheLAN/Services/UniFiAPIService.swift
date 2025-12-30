@@ -774,7 +774,8 @@ final class UniFiAPIService {
         ruleId: String,
         blockNow: Bool,
         scheduleStart: String?,
-        scheduleEnd: String?
+        scheduleEnd: String?,
+        description: String? = nil
     ) async throws -> FirewallPolicyDTO {
         // First, fetch the current policy to get all fields
         let currentPolicy = try await getFirewallPolicyRaw(policyId: ruleId)
@@ -813,6 +814,12 @@ final class UniFiAPIService {
                 updatedPolicy["schedule"] = scheduleDict
                 logger.info("No stored schedule - using ONE_TIME_ONLY with past date: \(pastDate)")
             }
+        }
+
+        // Update description if provided (for audit trail)
+        if let desc = description {
+            updatedPolicy["description"] = desc
+            logger.info("Adding audit trail to update: \(desc)")
         }
 
         logger.info("Updating firewall schedule: blockNow=\(blockNow)")
@@ -870,11 +877,23 @@ final class UniFiAPIService {
 
     // MARK: - Pause/Unpause Firewall Rule
 
-    /// Pause or unpause a firewall rule using the batch endpoint
-    /// This is the cleanest way to temporarily disable a rule without modifying its schedule
-    func pauseFirewallRule(ruleId: String, paused: Bool) async throws -> FirewallPolicyDTO {
+    /// Pause or unpause a firewall rule
+    /// Uses batch endpoint for simple pause/unpause, or full update when description is provided
+    func pauseFirewallRule(ruleId: String, paused: Bool, description: String? = nil) async throws -> FirewallPolicyDTO {
         try await ensureLoggedIn()
 
+        // If description provided, need to do full update (batch endpoint doesn't support description)
+        if let desc = description {
+            logger.info("Pause/unpause with description: ruleId=\(ruleId), paused=\(paused)")
+            let currentPolicy = try await getFirewallPolicyRaw(policyId: ruleId)
+            var updatedPolicy = currentPolicy
+            updatedPolicy["enabled"] = !paused
+            updatedPolicy["description"] = desc
+            logger.info("Adding audit trail to update: \(desc)")
+            return try await updateFirewallPolicyFull(policyId: ruleId, policy: updatedPolicy)
+        }
+
+        // No description - use fast batch endpoint
         let siteName = siteId.isEmpty ? "default" : siteId
         let urlString = "https://\(host)/proxy/network/v2/api/site/\(siteName)/firewall-policies/batch"
 

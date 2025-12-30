@@ -75,6 +75,32 @@ final class NotificationService: NSObject {
         }
     }
 
+    func scheduleTemporaryDelayExpiry(for rule: ACLRule, at expiryDate: Date) {
+        let content = UNMutableNotificationContent()
+        content.title = "Blocking starts now"
+        content.body = "\(rule.displayName)'s delay has ended"
+        content.sound = .default
+        content.categoryIdentifier = categoryIdentifier
+        content.userInfo = ["ruleId": rule.ruleId]
+
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(1, expiryDate.timeIntervalSinceNow),
+            repeats: false
+        )
+
+        let request = UNNotificationRequest(
+            identifier: notificationIdentifier(for: rule.ruleId),
+            content: content,
+            trigger: trigger
+        )
+
+        notificationCenter.add(request) { error in
+            if let error = error {
+                print("Failed to schedule delay notification: \(error)")
+            }
+        }
+    }
+
     func cancelNotification(for ruleId: String) {
         notificationCenter.removePendingNotificationRequests(
             withIdentifiers: [notificationIdentifier(for: ruleId)]

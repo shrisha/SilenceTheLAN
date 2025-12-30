@@ -51,23 +51,15 @@ final class AppState: NSObject, ObservableObject {
         return "\(displayHours):\(String(format: "%02d", mins)) \(period)"
     }
 
-    /// Update rule description for audit trail (fire-and-forget)
-    private func updateAuditTrail(ruleId: String, description: String) {
-        Task {
-            do {
-                // UniFi API requires full object, not partial updates
-                // Get current policy, modify description, PUT back
-                let currentPolicy = try await api.getFirewallPolicyRaw(policyId: ruleId)
-                var updatedPolicy = currentPolicy
-                updatedPolicy["description"] = description
-
-                _ = try await api.updateFirewallPolicyFull(policyId: ruleId, policy: updatedPolicy)
-                logger.info("Updated audit trail: \(description)")
-            } catch {
-                logger.warning("Failed to update audit trail: \(error.localizedDescription)")
-                // Don't block the main operation if audit update fails
-            }
+    /// Parse time string like "23:00" to minutes since midnight
+    private func parseTimeToMinutes(_ time: String) -> Int? {
+        let parts = time.split(separator: ":")
+        guard parts.count >= 2,
+              let hours = Int(parts[0]),
+              let minutes = Int(parts[1]) else {
+            return nil
         }
+        return hours * 60 + minutes
     }
 
     // MARK: - Services
@@ -484,22 +476,102 @@ final class AppState: NSObject, ObservableObject {
         logger.info("removeRule: Rule removed, now managing \(self.rules.count) rules")
     }
 
-    // MARK: - Temporary Allow
+    // MARK: - Temporary Allow / Delay
 
-    /// Start a temporary allow for a rule
+    /// Start a temporary allow (if blocking) or delay (if not yet blocking)
     func temporaryAllow(_ rule: ACLRule, minutes: Int) async {
         guard !togglingRuleIds.contains(rule.ruleId) else { return }
 
         togglingRuleIds.insert(rule.ruleId)
         defer { togglingRuleIds.remove(rule.ruleId) }
 
+        let isCurrentlyBlocking = rule.isCurrentlyBlocking
+
+        // Determine if this is a DELAY or ALLOW scenario
+        if !isCurrentlyBlocking, rule.scheduleStart != nil {
+            // DELAY scenario: Not blocking yet, push start time forward
+            await delayScheduleStart(rule, minutes: minutes)
+        } else {
+            // ALLOW scenario: Currently blocking, pause temporarily
+            await pauseTemporarily(rule, minutes: minutes)
+        }
+    }
+
+    /// Delay the schedule start time (for rules not yet blocking)
+    private func delayScheduleStart(_ rule: ACLRule, minutes: Int) async {
+        // Store original start time
+        rule.temporaryDelayOriginalStart = rule.scheduleStart
+        rule.temporaryDelayExpiry = Date().addingTimeInterval(TimeInterval(minutes * 60))
+
+        do {
+            // Calculate new start time
+            guard let originalStart = rule.scheduleStart,
+                  let startMinutes = parseTimeToMinutes(originalStart) else {
+                logger.error("Failed to parse schedule start time")
+                errorMessage = "Couldn't delay schedule. Invalid time format."
+                return
+            }
+
+            let newStartMinutes = (startMinutes + minutes) % (24 * 60) // Wrap at midnight
+            let newStartHours = newStartMinutes / 60
+            let newStartMins = newStartMinutes % 60
+            let newStartTime = String(format: "%02d:%02d", newStartHours, newStartMins)
+
+            // Generate audit trail message
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            let delayedUntil = formatScheduleTime(newStartTime)
+            let auditMsg = auditDescription(action: "Delayed to \(delayedUntil)", context: "\(minutes)m delay")
+
+            // Update schedule with new start time via API
+            logger.info("Delaying schedule: \(originalStart) → \(newStartTime)")
+            _ = try await api.toggleFirewallSchedule(
+                ruleId: rule.ruleId,
+                blockNow: false,
+                scheduleStart: newStartTime,
+                scheduleEnd: rule.scheduleEnd,
+                description: auditMsg
+            )
+
+            rule.scheduleStart = newStartTime
+            rule.lastSynced = Date()
+
+            // Schedule notification
+            if let expiry = rule.temporaryDelayExpiry {
+                NotificationService.shared.scheduleTemporaryDelayExpiry(for: rule, at: expiry)
+            }
+
+            try? modelContext?.save()
+
+            // Haptic feedback
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+
+            logger.info("Delayed schedule start for \(rule.name) by \(minutes) minutes to \(newStartTime)")
+        } catch {
+            // Rollback on failure
+            rule.temporaryDelayExpiry = nil
+            rule.temporaryDelayOriginalStart = nil
+            logger.error("Failed to delay schedule: \(error.localizedDescription)")
+            errorMessage = "Couldn't delay schedule. Try again."
+        }
+    }
+
+    /// Pause rule temporarily (for currently blocking rules)
+    private func pauseTemporarily(_ rule: ACLRule, minutes: Int) async {
         // Store original state
         rule.temporaryAllowOriginalEnabled = rule.isEnabled
         rule.temporaryAllowExpiry = Date().addingTimeInterval(TimeInterval(minutes * 60))
 
         do {
+            // Generate audit trail message
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            let expiryStr = timeFormatter.string(from: rule.temporaryAllowExpiry!)
+            let auditMsg = auditDescription(action: "Allowed until \(expiryStr)", context: "\(minutes)m extension")
+
             // Pause the rule to allow traffic (using session auth API)
-            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
+            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true, description: auditMsg)
             rule.isEnabled = false
             rule.lastSynced = Date()
 
@@ -514,15 +586,6 @@ final class AppState: NSObject, ObservableObject {
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
 
-            // Update audit trail
-            if let expiry = rule.temporaryAllowExpiry {
-                let timeFormatter = DateFormatter()
-                timeFormatter.dateFormat = "h:mm a"
-                let expiryStr = timeFormatter.string(from: expiry)
-                let auditMsg = auditDescription(action: "Allowed until \(expiryStr)", context: "\(minutes)m extension")
-                updateAuditTrail(ruleId: rule.ruleId, description: auditMsg)
-            }
-
             logger.info("Started temporary allow for \(rule.name) for \(minutes) minutes")
         } catch {
             // Rollback on failure
@@ -533,10 +596,67 @@ final class AppState: NSObject, ObservableObject {
         }
     }
 
-    /// Extend an active temporary allow
+    /// Extend an active temporary allow or delay
     func extendTemporaryAllow(_ rule: ACLRule, minutes: Int) async {
-        guard rule.hasActiveTemporaryAllow else { return }
+        // Check which type of extension this is
+        if rule.hasActiveTemporaryDelay {
+            await extendDelay(rule, minutes: minutes)
+        } else if rule.hasActiveTemporaryAllow {
+            await extendAllow(rule, minutes: minutes)
+        }
+    }
 
+    /// Extend an active delay
+    private func extendDelay(_ rule: ACLRule, minutes: Int) async {
+        guard let currentStart = rule.scheduleStart,
+              let startMinutes = parseTimeToMinutes(currentStart) else {
+            return
+        }
+
+        let baseTime = max(Date(), rule.temporaryDelayExpiry ?? Date())
+        rule.temporaryDelayExpiry = baseTime.addingTimeInterval(TimeInterval(minutes * 60))
+
+        // Calculate new start time (push further)
+        let newStartMinutes = (startMinutes + minutes) % (24 * 60)
+        let newStartHours = newStartMinutes / 60
+        let newStartMins = newStartMinutes % 60
+        let newStartTime = String(format: "%02d:%02d", newStartHours, newStartMins)
+
+        // Reschedule notification
+        NotificationService.shared.cancelNotification(for: rule.ruleId)
+        if let expiry = rule.temporaryDelayExpiry {
+            NotificationService.shared.scheduleTemporaryDelayExpiry(for: rule, at: expiry)
+        }
+
+        // Haptic feedback
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
+
+        // Update schedule with new start time
+        do {
+            let delayedUntil = formatScheduleTime(newStartTime)
+            let auditMsg = auditDescription(action: "Delay extended to \(delayedUntil)", context: "+\(minutes)m")
+
+            _ = try await api.toggleFirewallSchedule(
+                ruleId: rule.ruleId,
+                blockNow: false,
+                scheduleStart: newStartTime,
+                scheduleEnd: rule.scheduleEnd,
+                description: auditMsg
+            )
+
+            rule.scheduleStart = newStartTime
+            rule.lastSynced = Date()
+            logger.info("Extended delay for \(rule.name) to \(newStartTime)")
+        } catch {
+            logger.warning("Failed to extend delay: \(error.localizedDescription)")
+        }
+
+        try? modelContext?.save()
+    }
+
+    /// Extend an active temporary allow
+    private func extendAllow(_ rule: ACLRule, minutes: Int) async {
         let baseTime = max(Date(), rule.temporaryAllowExpiry ?? Date())
         rule.temporaryAllowExpiry = baseTime.addingTimeInterval(TimeInterval(minutes * 60))
 
@@ -546,36 +666,89 @@ final class AppState: NSObject, ObservableObject {
             NotificationService.shared.scheduleTemporaryAllowExpiry(for: rule, at: expiry)
         }
 
-        try? modelContext?.save()
-
         // Haptic feedback
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
 
-        // Update audit trail
-        if let expiry = rule.temporaryAllowExpiry {
+        // Update audit trail by re-pausing with new description (rule is already paused)
+        do {
             let timeFormatter = DateFormatter()
             timeFormatter.dateFormat = "h:mm a"
-            let expiryStr = timeFormatter.string(from: expiry)
+            let expiryStr = timeFormatter.string(from: rule.temporaryAllowExpiry!)
             let auditMsg = auditDescription(action: "Extended to \(expiryStr)", context: "+\(minutes)m")
-            updateAuditTrail(ruleId: rule.ruleId, description: auditMsg)
+
+            _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true, description: auditMsg)
+            rule.lastSynced = Date()
+        } catch {
+            logger.warning("Failed to update audit trail for extension: \(error.localizedDescription)")
+            // Don't block the extension if audit update fails
         }
 
+        try? modelContext?.save()
         logger.info("Extended temporary allow for \(rule.name) by \(minutes) minutes")
     }
 
-    /// Cancel temporary allow and re-block
+    /// Cancel temporary allow/delay and restore original state
     func cancelTemporaryAllow(_ rule: ACLRule) async {
-        guard rule.temporaryAllowExpiry != nil else { return }
+        guard rule.temporaryAllowExpiry != nil || rule.temporaryDelayExpiry != nil else { return }
 
         togglingRuleIds.insert(rule.ruleId)
         defer { togglingRuleIds.remove(rule.ruleId) }
 
-        await reblockAfterTemporaryAllow(rule)
+        if rule.temporaryDelayExpiry != nil {
+            await restoreDelayedSchedule(rule)
+        } else {
+            await reblockAfterTemporaryAllow(rule)
+        }
 
         // Haptic feedback
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
+    }
+
+    /// Restore original schedule after delay expires
+    private func restoreDelayedSchedule(_ rule: ACLRule) async {
+        guard let originalStart = rule.temporaryDelayOriginalStart else {
+            // No original start time stored, just clear the delay
+            rule.temporaryDelayExpiry = nil
+            rule.temporaryDelayOriginalStart = nil
+            NotificationService.shared.cancelNotification(for: rule.ruleId)
+            try? modelContext?.save()
+            return
+        }
+
+        // Clear delay state
+        rule.temporaryDelayExpiry = nil
+        rule.temporaryDelayOriginalStart = nil
+
+        // Cancel notification
+        NotificationService.shared.cancelNotification(for: rule.ruleId)
+
+        do {
+            // Generate audit trail message
+            let auditMsg = auditDescription(action: "Schedule restored", context: "delay expired")
+
+            // Restore original schedule start time
+            _ = try await api.toggleFirewallSchedule(
+                ruleId: rule.ruleId,
+                blockNow: false,
+                scheduleStart: originalStart,
+                scheduleEnd: rule.scheduleEnd,
+                description: auditMsg
+            )
+
+            rule.scheduleStart = originalStart
+            rule.lastSynced = Date()
+            try? modelContext?.save()
+
+            logger.info("Restored original schedule for \(rule.name) to \(originalStart)")
+        } catch {
+            // Keep delay expiry set so we retry on next app open
+            rule.temporaryDelayExpiry = Date() // Mark as expired but needing retry
+            rule.temporaryDelayOriginalStart = originalStart // Restore for retry
+            logger.error("Failed to restore delayed schedule: \(error.localizedDescription)")
+            errorMessage = "Couldn't restore schedule for \(rule.displayName). Tap to retry."
+        }
     }
 
     /// Re-block a rule after temporary allow expires
@@ -591,16 +764,15 @@ final class AppState: NSObject, ObservableObject {
 
         do {
             if shouldEnable {
+                // Generate audit trail message
+                let auditMsg = auditDescription(action: "Re-blocked", context: "extension expired")
+
                 // Unpause the rule to restore blocking (using session auth API)
-                _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
+                _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false, description: auditMsg)
                 rule.isEnabled = true
             }
             rule.lastSynced = Date()
             try? modelContext?.save()
-
-            // Update audit trail
-            let auditMsg = auditDescription(action: "Re-blocked", context: "extension expired")
-            updateAuditTrail(ruleId: rule.ruleId, description: auditMsg)
 
             logger.info("Re-blocked \(rule.name) after temporary allow")
         } catch {
@@ -611,23 +783,43 @@ final class AppState: NSObject, ObservableObject {
         }
     }
 
-    /// Check for and handle expired temporary allows (call on app becoming active)
+    /// Check for and handle expired temporary allows/delays (call on app becoming active)
     func checkExpiredTemporaryAllows() async {
         let now = Date()
-        let expiredRules = rules.filter { rule in
+
+        // Check for expired allows
+        let expiredAllows = rules.filter { rule in
             guard let expiry = rule.temporaryAllowExpiry else { return false }
             return expiry <= now
         }
 
-        guard !expiredRules.isEmpty else { return }
+        // Check for expired delays
+        let expiredDelays = rules.filter { rule in
+            guard let expiry = rule.temporaryDelayExpiry else { return false }
+            return expiry <= now
+        }
 
-        for rule in expiredRules {
+        guard !expiredAllows.isEmpty || !expiredDelays.isEmpty else { return }
+
+        // Handle expired allows
+        for rule in expiredAllows {
             await reblockAfterTemporaryAllow(rule)
         }
 
-        // Show toast (you can implement this with a published property)
-        let count = expiredRules.count
-        logger.info("Re-blocked \(count) rule(s) after temporary allow expired")
+        // Handle expired delays
+        for rule in expiredDelays {
+            await restoreDelayedSchedule(rule)
+        }
+
+        // Log results
+        let allowCount = expiredAllows.count
+        let delayCount = expiredDelays.count
+        if allowCount > 0 {
+            logger.info("Re-blocked \(allowCount) rule(s) after temporary allow expired")
+        }
+        if delayCount > 0 {
+            logger.info("Restored \(delayCount) schedule(s) after delay expired")
+        }
     }
 
     // MARK: - Toggle
@@ -667,6 +859,29 @@ final class AppState: NSObject, ObservableObject {
             let hasOriginalSchedule = rule.originalScheduleStart != nil && rule.originalScheduleEnd != nil
             let isInOriginalWindow = rule.isWithinOriginalScheduleWindow
 
+            // Generate audit trail message upfront
+            let auditMsg: String
+            if isCurrentlyBlocking {
+                // Will be allowing
+                if let start = rule.originalScheduleStart, let end = rule.originalScheduleEnd {
+                    let startFmt = formatScheduleTime(start)
+                    let endFmt = formatScheduleTime(end)
+                    auditMsg = auditDescription(action: "Allowed", context: "restored to schedule \(startFmt)-\(endFmt)")
+                } else {
+                    auditMsg = auditDescription(action: "Allowed", context: "paused")
+                }
+            } else {
+                // Will be blocking
+                if let start = rule.originalScheduleStart ?? rule.scheduleStart,
+                   let end = rule.originalScheduleEnd ?? rule.scheduleEnd {
+                    let startFmt = formatScheduleTime(start)
+                    let endFmt = formatScheduleTime(end)
+                    auditMsg = auditDescription(action: "Blocked", context: "override, normally \(startFmt)-\(endFmt)")
+                } else {
+                    auditMsg = auditDescription(action: "Blocked", context: "override")
+                }
+            }
+
             if isCurrentlyBlocking {
                 // ALLOW action: Currently blocking → want to allow traffic
                 if rule.scheduleMode.uppercased() == "ALWAYS" && hasOriginalSchedule {
@@ -679,14 +894,15 @@ final class AppState: NSObject, ObservableObject {
                         ruleId: rule.ruleId,
                         blockNow: false,
                         scheduleStart: rule.originalScheduleStart!,
-                        scheduleEnd: rule.originalScheduleEnd!
+                        scheduleEnd: rule.originalScheduleEnd!,
+                        description: isInOriginalWindow ? nil : auditMsg
                     )
 
                     if isInOriginalWindow {
                         // Inside schedule window - also pause to allow NOW
                         logger.info("Action: Also PAUSE (inside schedule window)")
                         rule.isEnabled = false
-                        _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
+                        _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true, description: auditMsg)
                     } else {
                         // Outside schedule window - traffic allowed by schedule
                         rule.isEnabled = true
@@ -695,7 +911,7 @@ final class AppState: NSObject, ObservableObject {
                     // Blocking by schedule - just pause
                     logger.info("Action: PAUSE (allow traffic)")
                     rule.isEnabled = false
-                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true)
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: true, description: auditMsg)
                 }
             } else if isPaused {
                 // BLOCK action: Currently paused → want to block traffic
@@ -713,7 +929,7 @@ final class AppState: NSObject, ObservableObject {
                         scheduleEnd: rule.originalScheduleEnd!
                     )
                     // Unpause after restoring schedule
-                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false, description: auditMsg)
                 } else if !isInOriginalWindow || !hasOriginalSchedule {
                     // Outside schedule window OR no original schedule - set to ALWAYS + unpause
                     logger.info("Action: BLOCK NOW (set ALWAYS + unpause)")
@@ -726,12 +942,12 @@ final class AppState: NSObject, ObservableObject {
                         scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
                     )
                     // Also unpause the rule
-                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false, description: auditMsg)
                 } else {
                     // Has schedule, inside window - just unpause
                     logger.info("Action: UNPAUSE (schedule will block)")
                     rule.isEnabled = true
-                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false)
+                    _ = try await api.pauseFirewallRule(ruleId: rule.ruleId, paused: false, description: auditMsg)
                 }
             } else {
                 // BLOCK action: Outside schedule window (not paused) → Block Now
@@ -750,7 +966,8 @@ final class AppState: NSObject, ObservableObject {
                     ruleId: rule.ruleId,
                     blockNow: true,
                     scheduleStart: rule.originalScheduleStart ?? rule.scheduleStart,
-                    scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd
+                    scheduleEnd: rule.originalScheduleEnd ?? rule.scheduleEnd,
+                    description: auditMsg
                 )
             }
 
@@ -758,26 +975,8 @@ final class AppState: NSObject, ObservableObject {
             let successGenerator = UINotificationFeedbackGenerator()
             successGenerator.notificationOccurred(.success)
 
-            // Update audit trail for transparency
-            let auditMsg: String
-            if rule.isCurrentlyBlocking {
-                // Now blocking
-                if let start = rule.originalScheduleStart, let end = rule.originalScheduleEnd {
-                    let startFmt = formatScheduleTime(start)
-                    let endFmt = formatScheduleTime(end)
-                    auditMsg = auditDescription(action: "Blocked", context: "override, normally \(startFmt) - \(endFmt)")
-                } else {
-                    auditMsg = auditDescription(action: "Blocked", context: "override")
-                }
-            } else {
-                // Now allowing
-                if rule.scheduleMode.uppercased() == "EVERY_DAY" {
-                    auditMsg = auditDescription(action: "Allowed", context: "restored to schedule")
-                } else {
-                    auditMsg = auditDescription(action: "Allowed", context: "paused")
-                }
-            }
-            updateAuditTrail(ruleId: rule.ruleId, description: auditMsg)
+            // Prepare audit trail message (already included in API calls above via description parameter)
+            // No separate API call needed
 
             rule.lastSynced = Date()
             try? modelContext?.save()
