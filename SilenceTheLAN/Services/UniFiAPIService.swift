@@ -671,6 +671,7 @@ final class UniFiAPIService {
     // MARK: - List Firewall Rules (REST API with session auth)
 
     func listFirewallRules() async throws -> [FirewallPolicyDTO] {
+        logger.info("listFirewallRules: Starting")
         let siteName = siteId.isEmpty ? "default" : siteId
         try await ensureLoggedIn()
 
@@ -679,11 +680,13 @@ final class UniFiAPIService {
             throw UniFiAPIError.invalidURL
         }
 
+        logger.info("listFirewallRules: About to make request to \(urlString)")
         var request = buildSessionRequest(url: url, method: "GET")
         request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
 
+        logger.info("listFirewallRules: Calling executeArray")
         let policies: [FirewallPolicyDTO] = try await executeArray(request)
-        logger.info("Fetched \(policies.count) firewall policies")
+        logger.info("listFirewallRules: Fetched \(policies.count) firewall policies")
 
         return policies
     }
@@ -693,10 +696,12 @@ final class UniFiAPIService {
         let data: Data
         let response: URLResponse
 
+        logger.info("executeArray: About to call session.data(for: request)")
         do {
             (data, response) = try await session.data(for: request)
+            logger.info("executeArray: session.data completed successfully")
         } catch {
-            logger.error("Network error: \(error.localizedDescription)")
+            logger.error("executeArray: Network error: \(error.localizedDescription)")
             throw UniFiAPIError.networkError(error)
         }
 

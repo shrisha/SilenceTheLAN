@@ -128,15 +128,16 @@ struct DashboardView: View {
             if expandedGroups.isEmpty {
                 expandedGroups = Set(ruleGroups.map { $0.id })
             }
-        }
-        .task {
-            // Only perform initial load once to avoid cancelling pull-to-refresh
-            guard !hasPerformedInitialLoad else { return }
-            hasPerformedInitialLoad = true
 
-            // Refresh rules on initial appear (with small delay to let UI render)
-            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
-            await appState.refreshRules()
+            // Perform initial load if not done yet
+            if !hasPerformedInitialLoad {
+                hasPerformedInitialLoad = true
+                Task {
+                    // Small delay to let UI render
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+                    await appState.refreshRules()
+                }
+            }
         }
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
             // Trigger UI refresh for countdown timers

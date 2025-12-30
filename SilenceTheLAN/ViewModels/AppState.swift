@@ -231,7 +231,10 @@ final class AppState: NSObject, ObservableObject {
         }
 
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer {
+            logger.info("refreshRules: defer block - setting isRefreshing = false")
+            isRefreshing = false
+        }
 
         // Be optimistic - try the API call directly
         // The actual network call will fail if unreachable
@@ -240,7 +243,7 @@ final class AppState: NSObject, ObservableObject {
         errorMessage = nil
 
         do {
-            logger.info("refreshRules: Fetching firewall rules")
+            logger.info("refreshRules: About to call api.listFirewallRules()")
             let remoteDTOs = try await api.listFirewallRules()
             logger.info("refreshRules: Got \(remoteDTOs.count) firewall rules")
 
