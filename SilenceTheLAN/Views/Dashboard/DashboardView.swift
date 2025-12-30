@@ -26,6 +26,7 @@ struct DashboardView: View {
     @State private var showSettings = false
     @State private var expandedGroups: Set<String> = []
     @State private var timerTick: Int = 0
+    @State private var hasPerformedInitialLoad = false
 
     /// Group rules by person name
     private var ruleGroups: [RuleGroup] {
@@ -129,7 +130,11 @@ struct DashboardView: View {
             }
         }
         .task {
-            // Refresh rules on appear (with small delay to let UI render)
+            // Only perform initial load once to avoid cancelling pull-to-refresh
+            guard !hasPerformedInitialLoad else { return }
+            hasPerformedInitialLoad = true
+
+            // Refresh rules on initial appear (with small delay to let UI render)
             try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
             await appState.refreshRules()
         }
