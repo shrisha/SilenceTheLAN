@@ -820,7 +820,7 @@ final class UniFiAPIService {
     }
 
     /// Get firewall policy as raw dictionary (for modification)
-    private func getFirewallPolicyRaw(policyId: String) async throws -> [String: Any] {
+    func getFirewallPolicyRaw(policyId: String) async throws -> [String: Any] {
         try await ensureLoggedIn()
 
         let siteName = siteId.isEmpty ? "default" : siteId
@@ -852,7 +852,7 @@ final class UniFiAPIService {
     }
 
     /// Update firewall policy with full object
-    private func updateFirewallPolicyFull(policyId: String, policy: [String: Any]) async throws -> FirewallPolicyDTO {
+    func updateFirewallPolicyFull(policyId: String, policy: [String: Any]) async throws -> FirewallPolicyDTO {
         try await ensureLoggedIn()
 
         let siteName = siteId.isEmpty ? "default" : siteId

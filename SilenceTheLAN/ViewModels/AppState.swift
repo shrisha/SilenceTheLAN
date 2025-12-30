@@ -55,8 +55,13 @@ final class AppState: NSObject, ObservableObject {
     private func updateAuditTrail(ruleId: String, description: String) {
         Task {
             do {
-                let update = ["description": description]
-                _ = try await api.updateFirewallPolicy(policyId: ruleId, update: update)
+                // UniFi API requires full object, not partial updates
+                // Get current policy, modify description, PUT back
+                let currentPolicy = try await api.getFirewallPolicyRaw(policyId: ruleId)
+                var updatedPolicy = currentPolicy
+                updatedPolicy["description"] = description
+
+                _ = try await api.updateFirewallPolicyFull(policyId: ruleId, policy: updatedPolicy)
                 logger.info("Updated audit trail: \(description)")
             } catch {
                 logger.warning("Failed to update audit trail: \(error.localizedDescription)")
