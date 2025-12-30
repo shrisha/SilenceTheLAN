@@ -326,7 +326,12 @@ final class AppState: NSObject, ObservableObject {
         }
 
         logger.info("updateCachedRulesFromFirewall: Updated \(matchCount) rules")
-        try? context.save()
+        do {
+            try context.save()
+            logger.info("updateCachedRulesFromFirewall: Context saved successfully")
+        } catch {
+            logger.error("updateCachedRulesFromFirewall: Failed to save context - \(error.localizedDescription)")
+        }
     }
 
     func saveSelectedFirewallRules(_ dtos: [FirewallPolicyDTO]) {
