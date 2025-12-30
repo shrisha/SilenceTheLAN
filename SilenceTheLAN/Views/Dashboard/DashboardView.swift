@@ -551,6 +551,12 @@ struct ActivityRuleRow: View {
                 Button { onExtendTemporaryAllow(120) } label: {
                     Label("Extend by 2 hours", systemImage: "clock.badge.plus")
                 }
+            } else if !rule.isEnabled {
+                // Rule is manually paused (not from extension) - show info
+                Button {} label: {
+                    Label("Rule is paused - traffic allowed", systemImage: "info.circle")
+                }
+                .disabled(true)
             } else {
                 // Show temporary allow/delay options based on current state
                 let labelPrefix = rule.isCurrentlyBlocking ? "Allow" : "Delay block by"
