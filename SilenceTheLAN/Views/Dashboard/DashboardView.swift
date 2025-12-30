@@ -183,16 +183,12 @@ struct DashboardView: View {
             // Blocked stat
             HStack(spacing: 8) {
                 Image(systemName: "wifi.slash")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Color.theme.neonRed)
 
                 Text("\(appState.rules.filter { $0.isCurrentlyBlocking }.count)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-
-                Text("Blocked")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color.theme.textSecondary)
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 16)
@@ -209,16 +205,12 @@ struct DashboardView: View {
             // Allowed stat
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(Color.theme.neonGreen)
 
                 Text("\(appState.rules.filter { !$0.isCurrentlyBlocking }.count)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-
-                Text("Allowed")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color.theme.textSecondary)
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 16)
