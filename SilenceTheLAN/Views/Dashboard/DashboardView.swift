@@ -550,19 +550,21 @@ struct ActivityRuleRow: View {
                 Button { onExtendTemporaryAllow(120) } label: {
                     Label("Extend by 2 hours", systemImage: "clock.badge.plus")
                 }
-            } else if rule.isCurrentlyBlocking {
-                // Currently blocking - show temporary allow options
+            } else {
+                // Show temporary allow/delay options based on current state
+                let labelPrefix = rule.isCurrentlyBlocking ? "Allow" : "Delay block by"
+
                 Button { onTemporaryAllow(15) } label: {
-                    Label("Allow 15 min", systemImage: "clock")
+                    Label("\(labelPrefix) 15 min", systemImage: "clock")
                 }
                 Button { onTemporaryAllow(30) } label: {
-                    Label("Allow 30 min", systemImage: "clock")
+                    Label("\(labelPrefix) 30 min", systemImage: "clock")
                 }
                 Button { onTemporaryAllow(60) } label: {
-                    Label("Allow 1 hour", systemImage: "clock")
+                    Label("\(labelPrefix) 1 hour", systemImage: "clock")
                 }
                 Button { onTemporaryAllow(120) } label: {
-                    Label("Allow 2 hours", systemImage: "clock")
+                    Label("\(labelPrefix) 2 hours", systemImage: "clock")
                 }
             }
         }

@@ -33,7 +33,12 @@ UniFi's firewall rules are incredibly powerful, but:
 
 ### Time Extensions
 
-Need to let your kid finish a YouTube video? Long-press any rule to grant temporary access. The rule automatically re-enables when time expires, and you'll get a notification.
+Long-press any rule for temporary exceptions:
+
+- **Currently blocking?** "Allow for X minutes" - traffic flows, then auto-reblocks
+- **Not yet blocking?** "Delay block by X minutes" - schedule start time is postponed
+
+Perfect for "Can I have 30 more minutes before bedtime?" scenarios. You'll get a notification when the extension expires.
 
 <p align="center">
   <img src="docs/screenshots/extension.png" width="250" alt="Time Extension" />
