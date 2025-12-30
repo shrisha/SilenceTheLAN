@@ -353,13 +353,14 @@ struct PersonGroupCard: View {
                                 .font(.system(size: 12))
                                 .foregroundColor(Color.theme.textSecondary)
 
-                            if group.blockedCount > 0 {
-                                Text("·")
-                                    .foregroundColor(Color.theme.textTertiary)
-                                Text("\(group.blockedCount) blocked")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(Color.theme.neonRed)
-                            }
+                            // Always reserve space to prevent layout shift
+                            Text("·")
+                                .foregroundColor(Color.theme.textTertiary)
+                                .opacity(group.blockedCount > 0 ? 1 : 0)
+                            Text("\(group.blockedCount) blocked")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(Color.theme.neonRed)
+                                .opacity(group.blockedCount > 0 ? 1 : 0)
                         }
                     }
 
