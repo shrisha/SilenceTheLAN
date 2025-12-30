@@ -3,7 +3,7 @@ import SwiftUI
 import Combine
 import OSLog
 
-private let logger = Logger(subsystem: "com.shrisha.SilenceTheLAN", category: "SetupViewModel")
+private let logger = Logger(subsystem: "io.github.shrisha.silencethelan", category: "SetupViewModel")
 
 @MainActor
 final class SetupViewModel: ObservableObject {

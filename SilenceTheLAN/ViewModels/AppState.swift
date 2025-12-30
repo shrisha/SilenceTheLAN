@@ -6,7 +6,7 @@ import os.log
 import AppIntents
 import UserNotifications
 
-private let logger = Logger(subsystem: "com.silencethelan", category: "AppState")
+private let logger = Logger(subsystem: "io.github.shrisha.silencethelan", category: "AppState")
 
 @MainActor
 final class AppState: NSObject, ObservableObject {
