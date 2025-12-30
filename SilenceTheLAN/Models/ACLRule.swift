@@ -110,12 +110,12 @@ final class ACLRule {
 
     /// Human-readable schedule summary
     var scheduleSummary: String {
-        // Check if paused first
+        // If paused, show schedule times only (ALLOWED badge conveys paused state)
         if !isEnabled {
             if let start = scheduleStart, let end = scheduleEnd {
-                return "Paused (normally \(formatTime(start)) - \(formatTime(end)))"
+                return "\(formatTime(start)) - \(formatTime(end))"
             }
-            return "Paused"
+            return "" // No label needed - ALLOWED badge shows state
         }
 
         switch scheduleMode.uppercased() {
