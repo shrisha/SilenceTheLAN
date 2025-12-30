@@ -113,9 +113,6 @@ struct DashboardView: View {
                     .padding(.top, 12)
                     .padding(.bottom, 80)
                 }
-                .refreshable {
-                    await appState.refreshRules()
-                }
             }
             .safeAreaPadding(.top)
         }
@@ -206,6 +203,21 @@ struct DashboardView: View {
                         color: Color.theme.neonGreen
                     )
                 }
+
+                // Refresh button
+                Button {
+                    Task {
+                        await appState.refreshRules()
+                    }
+                } label: {
+                    Image(systemName: appState.isLoading ? "arrow.clockwise.circle.fill" : "arrow.clockwise")
+                        .font(.title3)
+                        .foregroundColor(Color.theme.textSecondary)
+                        .padding(8)
+                        .rotationEffect(.degrees(appState.isLoading ? 360 : 0))
+                        .animation(appState.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: appState.isLoading)
+                }
+                .disabled(appState.isLoading)
 
                 Button {
                     showSettings = true
