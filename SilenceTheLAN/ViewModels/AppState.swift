@@ -294,7 +294,10 @@ final class AppState: NSObject, ObservableObject {
 
             if let existing = try? context.fetch(descriptor).first {
                 matchCount += 1
-                logger.info("updateCachedRulesFromFirewall: MATCH found - Updating '\(dto.name)' (id=\(dto.id)) - schedule mode=\(dto.schedule?.mode ?? "nil"), start=\(dto.schedule?.timeRangeStart ?? "nil"), end=\(dto.schedule?.timeRangeEnd ?? "nil")")
+                logger.info("updateCachedRulesFromFirewall: MATCH found - '\(dto.name)' (id=\(dto.id))")
+                logger.info("  BEFORE UPDATE - Cached: mode=\(existing.scheduleMode), start=\(existing.scheduleStart ?? "nil"), end=\(existing.scheduleEnd ?? "nil")")
+                logger.info("  FROM API - mode=\(dto.schedule?.mode ?? "nil"), start=\(dto.schedule?.timeRangeStart ?? "nil"), end=\(dto.schedule?.timeRangeEnd ?? "nil")")
+
                 // Update existing rule
                 existing.isEnabled = dto.enabled
                 existing.name = dto.name
@@ -307,14 +310,18 @@ final class AppState: NSObject, ObservableObject {
 
                 // Always update schedule times if API provides them
                 if let apiStart = dto.schedule?.timeRangeStart {
+                    logger.info("  Updating scheduleStart: '\(existing.scheduleStart ?? "nil")' -> '\(apiStart)'")
                     existing.scheduleStart = apiStart
                     existing.originalScheduleStart = apiStart
                 }
                 if let apiEnd = dto.schedule?.timeRangeEnd {
+                    logger.info("  Updating scheduleEnd: '\(existing.scheduleEnd ?? "nil")' -> '\(apiEnd)'")
                     existing.scheduleEnd = apiEnd
                     existing.originalScheduleEnd = apiEnd
                 }
                 existing.lastSynced = Date()
+
+                logger.info("  AFTER UPDATE - Cached: mode=\(existing.scheduleMode), start=\(existing.scheduleStart ?? "nil"), end=\(existing.scheduleEnd ?? "nil")")
             }
         }
 
