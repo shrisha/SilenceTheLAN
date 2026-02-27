@@ -133,16 +133,7 @@ struct WelcomeStep: View {
                 }
 
                 // Main icon
-                Image(systemName: "wifi.slash")
-                    .font(.system(size: 60, weight: .medium))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color.theme.neonGreen, Color.theme.neonBlue],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .neonGlow(Color.theme.neonGreen, radius: 20)
+                QuietSignalMark(size: 110)
             }
             .scaleEffect(logoScale)
             .opacity(logoOpacity)

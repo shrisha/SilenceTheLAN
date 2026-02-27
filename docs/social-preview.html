@@ -81,7 +81,48 @@
     }
 
     .icon {
-      font-size: 90px;
+      width: 108px;
+      height: 108px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .icon-core {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #19ff9e 0%, #00cb78 100%);
+      box-shadow: 0 0 28px rgba(0, 255, 136, 0.45);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .icon-arc {
+      position: absolute;
+      width: 128px;
+      height: 86px;
+      top: -44px;
+      left: -10px;
+      border-top: 14px solid rgba(255, 255, 255, 0.28);
+      border-left: 14px solid transparent;
+      border-right: 14px solid transparent;
+      border-radius: 80px 80px 0 0;
+    }
+
+    .icon-bars {
+      display: flex;
+      gap: 12px;
+    }
+
+    .icon-bar {
+      width: 18px;
+      height: 54px;
+      border-radius: 4px;
+      background: #040a17;
     }
 
     .content {
@@ -156,7 +197,15 @@
 
   <div class="container">
     <div class="icon-container">
-      <span class="icon">📵</span>
+      <div class="icon">
+        <div class="icon-arc"></div>
+        <div class="icon-core">
+          <div class="icon-bars">
+            <div class="icon-bar"></div>
+            <div class="icon-bar"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="content">

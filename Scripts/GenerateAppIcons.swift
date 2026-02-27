@@ -7,9 +7,9 @@ import SwiftUI
 import AppKit
 import Foundation
 
-// MARK: - Icon Components (duplicated from iOS for standalone script)
+// MARK: - Quiet Signal Components
 
-struct Arc: Shape {
+struct QuietSignalArc: Shape {
     let startAngle: Angle
     let endAngle: Angle
 
@@ -26,25 +26,55 @@ struct Arc: Shape {
     }
 }
 
-struct WiFiSymbol: View {
+struct QuietSignalGlyph: View {
     let size: CGFloat
+    let monochrome: Bool
 
     var body: some View {
         ZStack {
-            ForEach(0..<3) { i in
-                Arc(startAngle: .degrees(225), endAngle: .degrees(315))
-                    .stroke(style: StrokeStyle(lineWidth: size * 0.08, lineCap: .round))
-                    .frame(width: size * (0.3 + CGFloat(i) * 0.3), height: size * (0.3 + CGFloat(i) * 0.3))
-                    .offset(y: size * 0.15)
-            }
+            QuietSignalArc(startAngle: .degrees(205), endAngle: .degrees(335))
+                .stroke(
+                    monochrome ? Color.white.opacity(0.35) : Color.white.opacity(0.25),
+                    style: StrokeStyle(lineWidth: size * 0.12, lineCap: .round)
+                )
+                .frame(width: size * 1.2, height: size * 1.2)
+                .offset(y: -size * 0.34)
+
             Circle()
-                .frame(width: size * 0.15, height: size * 0.15)
-                .offset(y: size * 0.3)
+                .fill(
+                    monochrome
+                    ? AnyShapeStyle(Color.white.opacity(0.88))
+                    : AnyShapeStyle(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.09, green: 1.00, blue: 0.60),
+                                Color(red: 0.00, green: 0.80, blue: 0.47)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                )
+                .frame(width: size, height: size)
+                .shadow(
+                    color: monochrome ? .clear : Color(red: 0.09, green: 1.00, blue: 0.60).opacity(0.48),
+                    radius: size * 0.12
+                )
+
+            HStack(spacing: size * 0.12) {
+                RoundedRectangle(cornerRadius: size * 0.03)
+                    .fill(monochrome ? Color.black : Color(red: 0.03, green: 0.05, blue: 0.12))
+                    .frame(width: size * 0.16, height: size * 0.48)
+
+                RoundedRectangle(cornerRadius: size * 0.03)
+                    .fill(monochrome ? Color.black : Color(red: 0.03, green: 0.05, blue: 0.12))
+                    .frame(width: size * 0.16, height: size * 0.48)
+            }
         }
     }
 }
 
-// MARK: - Main Icon (Concept 2: Pause Network)
+// MARK: - App Icon Variants
 
 struct AppIconMain: View {
     var body: some View {
@@ -52,68 +82,35 @@ struct AppIconMain: View {
             let size = min(geo.size.width, geo.size.height)
 
             ZStack {
-                // Background
                 RoundedRectangle(cornerRadius: size * 0.22)
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color(red: 0.08, green: 0.08, blue: 0.12),
-                                Color(red: 0.02, green: 0.02, blue: 0.05)
+                                Color(red: 0.03, green: 0.05, blue: 0.13),
+                                Color(red: 0.00, green: 0.01, blue: 0.07)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
 
-                // Ambient glow
                 Circle()
                     .fill(
                         RadialGradient(
-                            colors: [
-                                Color(red: 0, green: 1, blue: 0.53).opacity(0.2),
-                                Color.clear
-                            ],
+                            colors: [Color(red: 0.0, green: 1.0, blue: 0.53).opacity(0.2), .clear],
                             center: .center,
                             startRadius: 0,
-                            endRadius: size * 0.6
+                            endRadius: size * 0.5
                         )
                     )
+                    .frame(width: size * 0.92, height: size * 0.92)
 
-                // WiFi waves (faded)
-                WiFiSymbol(size: size * 0.55)
-                    .foregroundColor(Color.white.opacity(0.15))
-                    .offset(y: -size * 0.08)
-
-                // Pause button circle
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0, green: 1, blue: 0.53),
-                                Color(red: 0, green: 0.7, blue: 0.35)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: size * 0.45, height: size * 0.45)
-                    .shadow(color: Color(red: 0, green: 1, blue: 0.53).opacity(0.5), radius: 15)
-
-                // Pause bars
-                HStack(spacing: size * 0.05) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(red: 0.05, green: 0.05, blue: 0.1))
-                        .frame(width: size * 0.07, height: size * 0.18)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(red: 0.05, green: 0.05, blue: 0.1))
-                        .frame(width: size * 0.07, height: size * 0.18)
-                }
+                QuietSignalGlyph(size: size * 0.46, monochrome: false)
+                    .offset(y: size * 0.03)
             }
         }
     }
 }
-
-// MARK: - Tinted Icon (Monochrome)
 
 struct AppIconTinted: View {
     var body: some View {
@@ -121,29 +118,11 @@ struct AppIconTinted: View {
             let size = min(geo.size.width, geo.size.height)
 
             ZStack {
-                // Solid background
                 RoundedRectangle(cornerRadius: size * 0.22)
                     .fill(Color.black)
 
-                // WiFi waves
-                WiFiSymbol(size: size * 0.55)
-                    .foregroundColor(Color.white.opacity(0.3))
-                    .offset(y: -size * 0.08)
-
-                // Pause button circle
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: size * 0.45, height: size * 0.45)
-
-                // Pause bars
-                HStack(spacing: size * 0.05) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.black)
-                        .frame(width: size * 0.07, height: size * 0.18)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.black)
-                        .frame(width: size * 0.07, height: size * 0.18)
-                }
+                QuietSignalGlyph(size: size * 0.46, monochrome: true)
+                    .offset(y: size * 0.03)
             }
         }
     }
@@ -191,10 +170,10 @@ func generateIcons() async {
     // Create directory if needed
     try? FileManager.default.createDirectory(at: assetPath, withIntermediateDirectories: true)
 
-    // Export main icon
+    // Export default icon
     exportIcon(AppIconMain(), to: assetPath.appendingPathComponent("AppIcon.png").path)
 
-    // Export dark icon (same as main for this design)
+    // Export dark icon
     exportIcon(AppIconMain(), to: assetPath.appendingPathComponent("AppIcon-Dark.png").path)
 
     // Export tinted icon

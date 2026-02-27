@@ -219,6 +219,63 @@ struct GradientText: View {
     }
 }
 
+// MARK: - Brand Mark
+
+struct QuietSignalArc: Shape {
+    let startAngle: Angle
+    let endAngle: Angle
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addArc(
+            center: CGPoint(x: rect.midX, y: rect.midY),
+            radius: rect.width / 2,
+            startAngle: startAngle,
+            endAngle: endAngle,
+            clockwise: false
+        )
+        return path
+    }
+}
+
+struct QuietSignalMark: View {
+    var size: CGFloat = 120
+
+    var body: some View {
+        ZStack {
+            QuietSignalArc(startAngle: .degrees(205), endAngle: .degrees(335))
+                .stroke(
+                    Color.white.opacity(0.25),
+                    style: StrokeStyle(lineWidth: size * 0.12, lineCap: .round)
+                )
+                .frame(width: size * 1.2, height: size * 1.2)
+                .offset(y: -size * 0.34)
+
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [Color.theme.neonGreen, Color(red: 0, green: 0.78, blue: 0.47)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: size, height: size)
+                .neonGlow(Color.theme.neonGreen, radius: size * 0.12)
+
+            HStack(spacing: size * 0.12) {
+                RoundedRectangle(cornerRadius: size * 0.03)
+                    .fill(Color(red: 0.03, green: 0.05, blue: 0.12))
+                    .frame(width: size * 0.16, height: size * 0.48)
+
+                RoundedRectangle(cornerRadius: size * 0.03)
+                    .fill(Color(red: 0.03, green: 0.05, blue: 0.12))
+                    .frame(width: size * 0.16, height: size * 0.48)
+            }
+        }
+        .frame(width: size * 1.5, height: size * 1.5)
+    }
+}
+
 // MARK: - Animated Button Style
 
 struct NeonButtonStyle: ButtonStyle {

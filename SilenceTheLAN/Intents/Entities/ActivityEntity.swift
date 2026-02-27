@@ -1,5 +1,4 @@
 import AppIntents
-import SwiftData
 
 struct ActivityEntity: AppEntity {
     var id: String
@@ -29,13 +28,7 @@ struct ActivityEntityQuery: EntityQuery {
     }
 
     func suggestedEntities() async throws -> [ActivityEntity] {
-        let container = try ModelContainer(for: ACLRule.self, AppConfiguration.self)
-        let context = ModelContext(container)
-
-        let descriptor = FetchDescriptor<ACLRule>(
-            predicate: #Predicate { $0.isSelected }
-        )
-        let rules = try context.fetch(descriptor)
+        let rules = try await IntentRuleService.shared.selectedRules()
 
         return rules.map { rule in
             let id = "\(rule.personName.lowercased())-\(rule.activityName.lowercased())"
