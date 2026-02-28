@@ -17,7 +17,6 @@ Set up your firewall rules in UniFi once, then toggle access from your iPhone:
 - Time-limited extensions (15m, 30m, 1h, 2h)
 - Rules grouped by person
 - Schedule-aware overrides with automatic restore
-- Siri Shortcuts support
 
 Built for privacy:
 - Local network only

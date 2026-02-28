@@ -3,16 +3,12 @@ import SwiftUI
 import SwiftData
 import Combine
 import os.log
-import AppIntents
 import UserNotifications
 
 private let logger = Logger(subsystem: "com.shrisha.stl", category: "AppState")
 
 @MainActor
 final class AppState: NSObject, ObservableObject {
-    // Shared instance for Siri Intents access
-    static let shared = AppState()
-
     // MARK: - Published State
 
     @Published var isInitialized = false  // Has configuration been checked?
@@ -294,8 +290,6 @@ final class AppState: NSObject, ObservableObject {
             loadCachedRules()
             logger.info("refreshRules: Completed successfully, \(self.rules.count) rules loaded")
 
-            // Update Siri shortcut parameters with current person/activity names
-            SilenceTheLANShortcuts.updateAppShortcutParameters()
         } catch {
             let errorDesc = error.localizedDescription.lowercased()
             // Don't show "cancelled" errors to user - these happen during normal navigation
@@ -420,8 +414,6 @@ final class AppState: NSObject, ObservableObject {
         loadCachedRules()
         logger.info("saveSelectedFirewallRules: Completed, \(self.rules.count) rules now in memory")
 
-        // Update Siri shortcut parameters with new person/activity names
-        SilenceTheLANShortcuts.updateAppShortcutParameters()
     }
 
     // MARK: - Add/Remove Individual Rules

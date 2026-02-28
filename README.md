@@ -28,7 +28,6 @@ UniFi's firewall rules are incredibly powerful, but:
 - **Grouped by person** - See all rules for each family member together
 - **Schedule-aware** - Shows normal schedule times, preserves them when you override
 - **Configurable prefixes** - Default `Downtime-` and `STL-`, plus up to 3 custom prefixes
-- **Siri Shortcuts** - "Block Rishi in SilenceTheLAN"
 - **Local only** - No cloud, no accounts, everything stays on your network
 
 ### Time Extensions

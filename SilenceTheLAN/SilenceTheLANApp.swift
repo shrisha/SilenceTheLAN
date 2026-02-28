@@ -1,16 +1,12 @@
 import SwiftUI
 import SwiftData
-import AppIntents
 
 @main
 struct SilenceTheLANApp: App {
-    @StateObject private var appState = AppState.shared
+    @StateObject private var appState = AppState()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        // Register App Shortcuts with Siri
-        SilenceTheLANShortcuts.updateAppShortcutParameters()
-
         // Request notification permission
         Task {
             _ = await NotificationService.shared.requestAuthorization()
@@ -32,6 +28,6 @@ struct SilenceTheLANApp: App {
                     }
                 }
         }
-        .modelContainer(SharedModelContainer.container)
+        .modelContainer(for: [AppConfiguration.self, ACLRule.self])
     }
 }
