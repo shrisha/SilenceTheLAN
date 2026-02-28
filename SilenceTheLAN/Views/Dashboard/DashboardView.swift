@@ -24,6 +24,7 @@ struct RuleGroup: Identifiable {
 struct DashboardView: View {
     @EnvironmentObject var appState: AppState
     @State private var showSettings = false
+    @State private var showManageRules = false
     @State private var expandedGroups: Set<String> = []
     @State private var timerTick: Int = 0
     @State private var hasPerformedInitialLoad = false
@@ -81,27 +82,27 @@ struct DashboardView: View {
                                         }
                                     },
                                     onToggleAll: { shouldBlock in
-                                        Task {
+                                        Task { @MainActor in
                                             await appState.toggleAllRulesForPerson(group.rules, shouldBlock: shouldBlock)
                                         }
                                     },
                                     onToggleRule: { rule in
-                                        Task {
+                                        Task { @MainActor in
                                             await appState.toggleRule(rule)
                                         }
                                     },
                                     onTemporaryAllow: { rule, minutes in
-                                        Task {
+                                        Task { @MainActor in
                                             await appState.temporaryAllow(rule, minutes: minutes)
                                         }
                                     },
                                     onExtendTemporaryAllow: { rule, minutes in
-                                        Task {
+                                        Task { @MainActor in
                                             await appState.extendTemporaryAllow(rule, minutes: minutes)
                                         }
                                     },
                                     onCancelTemporaryAllow: { rule in
-                                        Task {
+                                        Task { @MainActor in
                                             await appState.cancelTemporaryAllow(rule)
                                         }
                                     }
@@ -120,6 +121,12 @@ struct DashboardView: View {
             SettingsView()
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $showManageRules) {
+            NavigationStack {
+                ManageRulesView(allowsDismissButton: true)
+                    .environmentObject(appState)
+            }
+        }
         .onAppear {
             // Expand all groups by default
             if expandedGroups.isEmpty {
@@ -129,7 +136,7 @@ struct DashboardView: View {
             // Perform initial load if not done yet
             if !hasPerformedInitialLoad {
                 hasPerformedInitialLoad = true
-                Task {
+                Task { @MainActor in
                     // Small delay to let UI render
                     try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
                     await appState.refreshRules()
@@ -223,7 +230,7 @@ struct DashboardView: View {
 
             // Refresh button
             Button {
-                Task {
+                Task { @MainActor in
                     await appState.refreshRules()
                 }
             } label: {
@@ -298,18 +305,59 @@ struct DashboardView: View {
                 .font(.system(size: 50))
                 .foregroundColor(Color.theme.textTertiary)
 
-            Text("No Rules Yet")
+            Text("Finish Setup")
                 .font(.headline)
                 .foregroundColor(.white)
 
-            Text("Add rules in Settings to start\nmanaging your network")
+            Text("No managed rules yet. Select rules now and you can come back anytime to update them.")
                 .font(.subheadline)
                 .foregroundColor(Color.theme.textSecondary)
                 .multilineTextAlignment(.center)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    selectRulesButton
+                    refreshButton
+                }
+
+                VStack(spacing: 12) {
+                    selectRulesButton
+                        .frame(maxWidth: .infinity)
+                    refreshButton
+                        .frame(maxWidth: .infinity)
+                }
+            }
         }
         .padding(40)
         .frame(maxWidth: .infinity)
         .glassCard()
+    }
+
+    private var selectRulesButton: some View {
+        Button {
+            showManageRules = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "list.bullet.rectangle")
+                Text("Select Rules")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
+            }
+        }
+        .buttonStyle(.neon(Color.theme.neonGreen))
+    }
+
+    private var refreshButton: some View {
+        Button {
+            Task { @MainActor in
+                await appState.refreshRules()
+            }
+        } label: {
+            Label("Refresh", systemImage: "arrow.clockwise")
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+        }
+        .buttonStyle(.ghost(Color.theme.textSecondary))
     }
 }
 

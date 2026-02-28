@@ -4,11 +4,17 @@ struct ManageRulesView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
+    let allowsDismissButton: Bool
+
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var availableRules: [FirewallPolicyDTO] = []
     @State private var managedRuleIds: Set<String> = []
     @State private var staleRuleIds: Set<String> = []
+
+    init(allowsDismissButton: Bool = false) {
+        self.allowsDismissButton = allowsDismissButton
+    }
 
     var body: some View {
         ZStack {
@@ -27,6 +33,17 @@ struct ManageRulesView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.theme.background, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            if allowsDismissButton {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .foregroundColor(Color.theme.neonGreen)
+                    .fontWeight(.semibold)
+                }
+            }
+        }
         .task {
             await loadRules()
         }
@@ -63,7 +80,7 @@ struct ManageRulesView: View {
                 .multilineTextAlignment(.center)
 
             Button("Retry") {
-                Task {
+                Task { @MainActor in
                     await loadRules()
                 }
             }
@@ -221,6 +238,22 @@ struct ManageRulesView: View {
                 .font(.subheadline)
                 .foregroundColor(Color.theme.textSecondary)
                 .multilineTextAlignment(.center)
+
+            HStack(spacing: 12) {
+                if allowsDismissButton {
+                    Button("Back") {
+                        dismiss()
+                    }
+                    .buttonStyle(.ghost(Color.theme.textSecondary))
+                }
+
+                Button("Retry") {
+                    Task { @MainActor in
+                        await loadRules()
+                    }
+                }
+                .buttonStyle(.neon(Color.theme.neonGreen))
+            }
         }
         .padding(32)
         .frame(maxWidth: .infinity)

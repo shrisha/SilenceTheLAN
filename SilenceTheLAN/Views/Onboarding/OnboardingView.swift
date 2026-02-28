@@ -252,7 +252,7 @@ struct HostDiscoveryStep: View {
             .background(Color.theme.background)
         }
         .onAppear {
-            Task {
+            Task { @MainActor in
                 await viewModel.discoverUniFi()
             }
         }
@@ -325,7 +325,7 @@ struct HostDiscoveryStep: View {
             .buttonStyle(.ghost(Color.theme.neonGreen))
 
             Button("Try Again") {
-                Task {
+                Task { @MainActor in
                     await viewModel.discoverUniFi()
                 }
             }
@@ -484,7 +484,7 @@ struct CredentialsStep: View {
                             // Primary action
                             Button {
                                 focusedField = nil
-                                Task {
+                                Task { @MainActor in
                                     if await viewModel.verifyCredentials() {
                                         viewModel.nextStep()
                                     }
@@ -672,7 +672,7 @@ struct SiteIdStep: View {
                 Button("Continue") {
                     isSiteIdFieldFocused = false
                     viewModel.nextStep()
-                    Task {
+                    Task { @MainActor in
                         await viewModel.loadRules()
                     }
                 }
@@ -701,6 +701,7 @@ struct SiteIdStep: View {
 struct RuleSelectionStep: View {
     @ObservedObject var viewModel: SetupViewModel
     @ObservedObject var appState: AppState
+    @State private var showContinueWithoutRulesConfirmation = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -710,7 +711,7 @@ struct RuleSelectionStep: View {
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
 
-                Text("Choose which rules to manage")
+                Text("Choose rules to manage now. You can add more later.")
                     .font(.subheadline)
                     .foregroundColor(Color.theme.textSecondary)
             }
@@ -770,6 +771,12 @@ struct RuleSelectionStep: View {
 
             Spacer()
 
+            if viewModel.selectedRuleIds.isEmpty {
+                Text("You can finish setup now and pick rules later in Settings.")
+                    .font(.caption)
+                    .foregroundColor(Color.theme.textSecondary)
+            }
+
             // Navigation
             HStack(spacing: 16) {
                 Button("Back") {
@@ -777,20 +784,28 @@ struct RuleSelectionStep: View {
                 }
                 .buttonStyle(.ghost(Color.theme.textSecondary))
 
-                Button("Finish Setup") {
-                    appState.saveSelectedFirewallRules(viewModel.getSelectedFirewallRules())
-                    appState.saveConfiguration(
-                        host: viewModel.host,
-                        siteId: viewModel.siteId
-                    )
+                Button(viewModel.selectedRuleIds.isEmpty ? "Continue for Now" : "Finish Setup") {
+                    guard !viewModel.selectedRuleIds.isEmpty else {
+                        showContinueWithoutRulesConfirmation = true
+                        return
+                    }
+                    completeSetup()
                 }
                 .buttonStyle(.neon(Color.theme.neonGreen))
-                .disabled(viewModel.selectedRuleIds.isEmpty)
-                .opacity(viewModel.selectedRuleIds.isEmpty ? 0.5 : 1)
+                .disabled(viewModel.isLoading)
+                .opacity(viewModel.isLoading ? 0.5 : 1)
             }
             .padding(.bottom, 40)
         }
         .padding(.horizontal, 24)
+        .alert("Continue without selecting rules?", isPresented: $showContinueWithoutRulesConfirmation) {
+            Button("Back", role: .cancel) { }
+            Button("Continue") {
+                completeSetup()
+            }
+        } message: {
+            Text("You can add and manage rules later from Settings > Manage Rules.")
+        }
     }
 
     private var emptyState: some View {
@@ -820,7 +835,7 @@ struct RuleSelectionStep: View {
             }
 
             Button("Retry") {
-                Task {
+                Task { @MainActor in
                     await viewModel.loadRules()
                 }
             }
@@ -828,6 +843,14 @@ struct RuleSelectionStep: View {
         }
         .padding(32)
         .glassCard()
+    }
+
+    private func completeSetup() {
+        appState.saveSelectedFirewallRules(viewModel.getSelectedFirewallRules())
+        appState.saveConfiguration(
+            host: viewModel.host,
+            siteId: viewModel.siteId
+        )
     }
 }
 

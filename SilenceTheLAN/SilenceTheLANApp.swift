@@ -8,7 +8,7 @@ struct SilenceTheLANApp: App {
 
     init() {
         // Request notification permission
-        Task {
+        Task { @MainActor in
             _ = await NotificationService.shared.requestAuthorization()
         }
     }
@@ -22,12 +22,12 @@ struct SilenceTheLANApp: App {
                     // Only check when returning from background, not on initial launch
                     // This avoids racing with initial data load
                     if oldPhase == .background && newPhase == .active {
-                        Task {
+                        Task { @MainActor in
                             await appState.checkExpiredTemporaryAllows()
                         }
                     }
                 }
         }
-        .modelContainer(for: [AppConfiguration.self, ACLRule.self])
+        .modelContainer(AppModelContainer.container)
     }
 }
