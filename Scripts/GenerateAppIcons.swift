@@ -82,6 +82,9 @@ struct AppIconMain: View {
             let size = min(geo.size.width, geo.size.height)
 
             ZStack {
+                Rectangle()
+                    .fill(Color(red: 0.00, green: 0.01, blue: 0.07))
+
                 RoundedRectangle(cornerRadius: size * 0.22)
                     .fill(
                         LinearGradient(
@@ -118,6 +121,9 @@ struct AppIconTinted: View {
             let size = min(geo.size.width, geo.size.height)
 
             ZStack {
+                Rectangle()
+                    .fill(Color.black)
+
                 RoundedRectangle(cornerRadius: size * 0.22)
                     .fill(Color.black)
 
@@ -138,19 +144,40 @@ func exportIcon<V: View>(_ view: V, to path: String) {
     let renderer = ImageRenderer(content: framedView)
     renderer.scale = 1.0
 
-    if let nsImage = renderer.nsImage {
-        if let tiffData = nsImage.tiffRepresentation,
-           let bitmap = NSBitmapImageRep(data: tiffData),
-           let pngData = bitmap.representation(using: .png, properties: [:]) {
-            do {
-                try pngData.write(to: URL(fileURLWithPath: path))
-                print("✅ Exported: \(path)")
-            } catch {
-                print("❌ Failed to write \(path): \(error)")
-            }
-        }
-    } else {
+    guard let nsImage = renderer.nsImage,
+          let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
+          let colorSpace = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(
+            data: nil,
+            width: Int(size),
+            height: Int(size),
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+          ) else {
         print("❌ Failed to render image")
+        return
+    }
+
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
+
+    guard let flattenedImage = context.makeImage() else {
+        print("❌ Failed to flatten icon")
+        return
+    }
+
+    let bitmap = NSBitmapImageRep(cgImage: flattenedImage)
+    guard let pngData = bitmap.representation(using: .png, properties: [:]) else {
+        print("❌ Failed to encode PNG")
+        return
+    }
+
+    do {
+        try pngData.write(to: URL(fileURLWithPath: path))
+        print("✅ Exported: \(path)")
+    } catch {
+        print("❌ Failed to write \(path): \(error)")
     }
 }
 
