@@ -157,7 +157,7 @@ struct DashboardView: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [Color.theme.neonGreen.opacity(0.05), .clear],
+                        colors: [Color.theme.success.opacity(0.05), .clear],
                         center: .center,
                         startRadius: 0,
                         endRadius: 200
@@ -170,7 +170,7 @@ struct DashboardView: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [Color.theme.neonRed.opacity(0.03), .clear],
+                        colors: [Color.theme.danger.opacity(0.03), .clear],
                         center: .center,
                         startRadius: 0,
                         endRadius: 200
@@ -191,7 +191,7 @@ struct DashboardView: View {
             HStack(spacing: 8) {
                 Image(systemName: "wifi.slash")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Color.theme.neonRed)
+                    .foregroundColor(Color.theme.danger)
 
                 Text("\(appState.rules.filter { $0.isCurrentlyBlocking }.count)")
                     .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -201,7 +201,7 @@ struct DashboardView: View {
             .padding(.horizontal, 16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.theme.neonRed.opacity(0.12))
+                    .fill(Color.theme.danger.opacity(0.12))
             )
 
             // Divider
@@ -213,7 +213,7 @@ struct DashboardView: View {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Color.theme.neonGreen)
+                    .foregroundColor(Color.theme.success)
 
                 Text("\(appState.rules.filter { !$0.isCurrentlyBlocking }.count)")
                     .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -223,7 +223,7 @@ struct DashboardView: View {
             .padding(.horizontal, 16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.theme.neonGreen.opacity(0.12))
+                    .fill(Color.theme.success.opacity(0.12))
             )
 
             Spacer()
@@ -270,10 +270,10 @@ struct DashboardView: View {
                 .font(.subheadline)
             Spacer()
         }
-        .foregroundColor(Color.theme.neonRed)
+        .foregroundColor(Color.theme.danger)
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(Color.theme.neonRed.opacity(0.15))
+        .background(Color.theme.danger.opacity(0.15))
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 
@@ -292,7 +292,7 @@ struct DashboardView: View {
                     .font(.caption)
             }
         }
-        .foregroundColor(Color.theme.neonRed)
+        .foregroundColor(Color.theme.danger)
         .padding(16)
         .glassCard(cornerRadius: 12)
     }
@@ -344,7 +344,7 @@ struct DashboardView: View {
                     .minimumScaleFactor(0.9)
             }
         }
-        .buttonStyle(.neon(Color.theme.neonGreen))
+        .buttonStyle(.filled(Color.theme.success))
     }
 
     private var refreshButton: some View {
@@ -402,7 +402,7 @@ struct PersonGroupCard: View {
     let onCancelTemporaryAllow: (ACLRule) -> Void
 
     private var stateColor: Color {
-        group.isAnyBlocking ? Color.theme.neonRed : Color.theme.neonGreen
+        group.isAnyBlocking ? Color.theme.danger : Color.theme.success
     }
 
     private var isAnyToggling: Bool {
@@ -447,7 +447,7 @@ struct PersonGroupCard: View {
                                 .opacity(group.blockedCount > 0 ? 1 : 0)
                             Text("\(group.blockedCount) blocked")
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(Color.theme.neonRed)
+                                .foregroundColor(Color.theme.danger)
                                 .opacity(group.blockedCount > 0 ? 1 : 0)
                         }
                     }
@@ -465,16 +465,16 @@ struct PersonGroupCard: View {
                         } label: {
                             Text(group.isAnyBlocking ? "Allow All" : "Block All")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(group.isAnyBlocking ? Color.theme.neonGreen : Color.theme.neonRed)
+                                .foregroundColor(group.isAnyBlocking ? Color.theme.success : Color.theme.danger)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
                                 .background(
                                     Capsule()
-                                        .fill((group.isAnyBlocking ? Color.theme.neonGreen : Color.theme.neonRed).opacity(0.15))
+                                        .fill((group.isAnyBlocking ? Color.theme.success : Color.theme.danger).opacity(0.15))
                                 )
                                 .overlay(
                                     Capsule()
-                                        .stroke((group.isAnyBlocking ? Color.theme.neonGreen : Color.theme.neonRed).opacity(0.3), lineWidth: 1)
+                                        .stroke((group.isAnyBlocking ? Color.theme.success : Color.theme.danger).opacity(0.3), lineWidth: 1)
                                 )
                         }
                         .buttonStyle(.plain)
@@ -504,11 +504,11 @@ struct PersonGroupCard: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 12)
                 .fill(Color.theme.surface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(
                     LinearGradient(
                         colors: [stateColor.opacity(0.3), stateColor.opacity(0.1)],
@@ -533,9 +533,9 @@ struct ActivityRuleRow: View {
 
     private var stateColor: Color {
         if rule.hasActiveTemporaryAllow {
-            return Color.theme.neonAmber
+            return Color.theme.warning
         }
-        return rule.isCurrentlyBlocking ? Color.theme.neonRed : Color.theme.neonGreen
+        return rule.isCurrentlyBlocking ? Color.theme.danger : Color.theme.success
     }
 
     private var activityIcon: String {
@@ -680,14 +680,14 @@ struct CustomToggle: View {
                 .frame(width: 56, height: 32)
                 .overlay(
                     Capsule()
-                        .stroke(isOn ? color.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
+                        .stroke(isOn ? color.opacity(0.5) : Color.theme.border, lineWidth: 1)
                 )
 
             // Thumb
             Circle()
                 .fill(isOn ? color : Color.theme.textSecondary)
                 .frame(width: 26, height: 26)
-                .neonGlow(color, radius: isOn ? 8 : 0)
+                .softGlow(color, radius: isOn ? 8 : 0)
                 .offset(x: isOn ? 12 : -12)
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isOn)

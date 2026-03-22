@@ -39,7 +39,7 @@ struct ManageRulesView: View {
                     Button("Done") {
                         dismiss()
                     }
-                    .foregroundColor(Color.theme.neonGreen)
+                    .foregroundColor(Color.theme.success)
                     .fontWeight(.semibold)
                 }
             }
@@ -54,7 +54,7 @@ struct ManageRulesView: View {
     private var loadingView: some View {
         VStack(spacing: 16) {
             ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: Color.theme.neonGreen))
+                .progressViewStyle(CircularProgressViewStyle(tint: Color.theme.success))
                 .scaleEffect(1.5)
             Text("Loading rules...")
                 .font(.subheadline)
@@ -68,7 +68,7 @@ struct ManageRulesView: View {
         VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 50))
-                .foregroundColor(Color.theme.neonRed)
+                .foregroundColor(Color.theme.danger)
 
             Text("Failed to Load Rules")
                 .font(.headline)
@@ -84,7 +84,7 @@ struct ManageRulesView: View {
                     await loadRules()
                 }
             }
-            .buttonStyle(.neon(Color.theme.neonGreen))
+            .buttonStyle(.filled(Color.theme.success))
         }
         .padding(32)
     }
@@ -131,11 +131,11 @@ struct ManageRulesView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(Color.theme.neonRed)
+                    .foregroundColor(Color.theme.danger)
                 Text("NO LONGER IN UNIFI")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .tracking(2)
-                    .foregroundColor(Color.theme.neonRed)
+                    .foregroundColor(Color.theme.danger)
             }
             .padding(.horizontal, 4)
 
@@ -147,7 +147,7 @@ struct ManageRulesView: View {
 
                     if rule.ruleId != staleRules.last?.ruleId {
                         Divider()
-                            .background(Color.theme.glassStroke)
+                            .background(Color.theme.border)
                     }
                 }
             }
@@ -155,7 +155,7 @@ struct ManageRulesView: View {
             .cornerRadius(16)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.theme.neonRed.opacity(0.5), lineWidth: 1)
+                    .stroke(Color.theme.danger.opacity(0.5), lineWidth: 1)
             )
         }
     }
@@ -178,7 +178,7 @@ struct ManageRulesView: View {
 
                     if rule.ruleId != managedRules.last?.ruleId {
                         Divider()
-                            .background(Color.theme.glassStroke)
+                            .background(Color.theme.border)
                     }
                 }
             }
@@ -186,7 +186,7 @@ struct ManageRulesView: View {
             .cornerRadius(16)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.theme.glassStroke, lineWidth: 1)
+                    .stroke(Color.theme.border, lineWidth: 1)
             )
         }
     }
@@ -209,7 +209,7 @@ struct ManageRulesView: View {
 
                     if rule.id != unmangedRules.last?.id {
                         Divider()
-                            .background(Color.theme.glassStroke)
+                            .background(Color.theme.border)
                     }
                 }
             }
@@ -217,7 +217,7 @@ struct ManageRulesView: View {
             .cornerRadius(16)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.theme.glassStroke, lineWidth: 1)
+                    .stroke(Color.theme.border, lineWidth: 1)
             )
         }
     }
@@ -252,7 +252,7 @@ struct ManageRulesView: View {
                         await loadRules()
                     }
                 }
-                .buttonStyle(.neon(Color.theme.neonGreen))
+                .buttonStyle(.filled(Color.theme.success))
             }
         }
         .padding(32)
@@ -336,7 +336,7 @@ struct ManagedRuleRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Circle()
-                .fill(rule.isCurrentlyBlocking ? Color.theme.neonRed : Color.theme.neonGreen)
+                .fill(rule.isCurrentlyBlocking ? Color.theme.danger : Color.theme.success)
                 .frame(width: 10, height: 10)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -356,7 +356,7 @@ struct ManagedRuleRow: View {
             } label: {
                 Image(systemName: "minus.circle.fill")
                     .font(.title2)
-                    .foregroundColor(Color.theme.neonRed.opacity(0.8))
+                    .foregroundColor(Color.theme.danger.opacity(0.8))
             }
         }
         .padding(16)
@@ -373,7 +373,7 @@ struct StaleRuleRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(Color.theme.neonRed)
+                .foregroundColor(Color.theme.danger)
                 .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -383,7 +383,7 @@ struct StaleRuleRow: View {
 
                 Text("Rule deleted from UniFi")
                     .font(.caption)
-                    .foregroundColor(Color.theme.neonRed)
+                    .foregroundColor(Color.theme.danger)
             }
 
             Spacer()
@@ -394,10 +394,10 @@ struct StaleRuleRow: View {
                 Text("Remove")
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundColor(Color.theme.neonRed)
+                    .foregroundColor(Color.theme.danger)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.theme.neonRed.opacity(0.2))
+                    .background(Color.theme.danger.opacity(0.2))
                     .cornerRadius(8)
             }
         }
@@ -450,7 +450,7 @@ struct AvailableRuleRow: View {
             } label: {
                 Image(systemName: "plus.circle.fill")
                     .font(.title2)
-                    .foregroundColor(Color.theme.neonGreen)
+                    .foregroundColor(Color.theme.success)
             }
         }
         .padding(16)
