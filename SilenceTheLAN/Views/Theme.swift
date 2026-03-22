@@ -7,46 +7,46 @@ extension Color {
 }
 
 struct ThemeColors {
-    // Core colors
-    let background = Color.black
-    let surface = Color(white: 0.08)
-    let surfaceElevated = Color(white: 0.12)
+    // Surfaces
+    let background = Color(red: 0.043, green: 0.075, blue: 0.149)       // #0b1326 Deep Slate
+    let surface = Color(red: 0.075, green: 0.106, blue: 0.180)           // #131b2e
+    let surfaceElevated = Color(red: 0.176, green: 0.204, blue: 0.286)   // #2d3449
 
-    // Neon accents
-    let neonGreen = Color(red: 0, green: 1, blue: 0.53) // #00FF88
-    let neonRed = Color(red: 1, green: 0.27, blue: 0.27) // #FF4444
-    let neonBlue = Color(red: 0.4, green: 0.6, blue: 1) // Accent blue
-    let neonPurple = Color(red: 0.7, green: 0.4, blue: 1) // Accent purple
-    let neonAmber = Color(red: 1, green: 0.75, blue: 0) // #FFBF00
+    // Brand
+    let primary = Color(red: 0.145, green: 0.388, blue: 0.922)           // #2563eb
+    let accent = Color(red: 0.706, green: 0.773, blue: 1.0)              // #b4c5ff
 
-    // Text colors
+    // Status
+    let success = Color(red: 0.063, green: 0.725, blue: 0.506)           // #10b981
+    let warning = Color(red: 0.961, green: 0.620, blue: 0.043)           // #f59e0b
+    let danger = Color(red: 0.937, green: 0.267, blue: 0.267)            // #ef4444
+
+    // Text
     let textPrimary = Color.white
-    let textSecondary = Color(white: 0.6)
-    let textTertiary = Color(white: 0.4)
+    let textSecondary = Color(red: 0.580, green: 0.639, blue: 0.722)     // #94a3b8
+    let textTertiary = Color(red: 0.392, green: 0.455, blue: 0.545)      // #64748b
 
-    // Glass effect
-    let glassStroke = Color.white.opacity(0.1)
-    let glassFill = Color.white.opacity(0.05)
+    // Borders & Glass
+    let border = Color(red: 0.580, green: 0.639, blue: 0.722).opacity(0.15)
+    let glassFill = Color.white.opacity(0.03)
 }
 
 // MARK: - Glow Modifiers
 
-struct NeonGlow: ViewModifier {
+struct SoftGlow: ViewModifier {
     let color: Color
     let radius: CGFloat
     let isActive: Bool
 
     func body(content: Content) -> some View {
         content
-            .shadow(color: isActive ? color.opacity(0.8) : .clear, radius: radius)
-            .shadow(color: isActive ? color.opacity(0.5) : .clear, radius: radius * 2)
-            .shadow(color: isActive ? color.opacity(0.3) : .clear, radius: radius * 3)
+            .shadow(color: isActive ? color.opacity(0.4) : .clear, radius: radius)
     }
 }
 
 extension View {
-    func neonGlow(_ color: Color, radius: CGFloat = 10, isActive: Bool = true) -> some View {
-        modifier(NeonGlow(color: color, radius: radius, isActive: isActive))
+    func softGlow(_ color: Color, radius: CGFloat = 8, isActive: Bool = true) -> some View {
+        modifier(SoftGlow(color: color, radius: radius, isActive: isActive))
     }
 }
 
@@ -59,21 +59,17 @@ struct GlassCard: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Color.theme.glassFill)
-                    .background(
-                        RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(.ultraThinMaterial.opacity(0.3))
-                    )
+                    .fill(Color.theme.surface)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(Color.theme.glassStroke, lineWidth: 1)
+                    .stroke(Color.theme.border, lineWidth: 1)
             )
     }
 }
 
 extension View {
-    func glassCard(cornerRadius: CGFloat = 20) -> some View {
+    func glassCard(cornerRadius: CGFloat = 12) -> some View {
         modifier(GlassCard(cornerRadius: cornerRadius))
     }
 }
@@ -156,7 +152,7 @@ struct RadarScanView: View {
             // Outer rings
             ForEach(0..<3) { i in
                 Circle()
-                    .stroke(Color.theme.neonGreen.opacity(0.2 - Double(i) * 0.05), lineWidth: 1)
+                    .stroke(Color.theme.primary.opacity(0.2 - Double(i) * 0.05), lineWidth: 1)
                     .frame(width: 150 + CGFloat(i) * 50)
             }
 
@@ -165,7 +161,7 @@ struct RadarScanView: View {
                 .trim(from: 0, to: 0.25)
                 .stroke(
                     AngularGradient(
-                        colors: [Color.theme.neonGreen.opacity(0), Color.theme.neonGreen],
+                        colors: [Color.theme.primary.opacity(0), Color.theme.primary],
                         center: .center,
                         startAngle: .degrees(0),
                         endAngle: .degrees(90)
@@ -177,13 +173,13 @@ struct RadarScanView: View {
 
             // Center dot
             Circle()
-                .fill(Color.theme.neonGreen)
+                .fill(Color.theme.primary)
                 .frame(width: 12)
-                .neonGlow(Color.theme.neonGreen, radius: 8)
+                .softGlow(Color.theme.primary, radius: 8)
 
             // Pulsing circles
             Circle()
-                .stroke(Color.theme.neonGreen.opacity(0.5), lineWidth: 2)
+                .stroke(Color.theme.primary.opacity(0.5), lineWidth: 2)
                 .frame(width: 40 * scale)
                 .opacity(2 - Double(scale))
         }
@@ -245,7 +241,7 @@ struct QuietSignalMark: View {
         ZStack {
             QuietSignalArc(startAngle: .degrees(205), endAngle: .degrees(335))
                 .stroke(
-                    Color.white.opacity(0.25),
+                    Color.theme.accent.opacity(0.3),
                     style: StrokeStyle(lineWidth: size * 0.12, lineCap: .round)
                 )
                 .frame(width: size * 1.2, height: size * 1.2)
@@ -254,21 +250,21 @@ struct QuietSignalMark: View {
             Circle()
                 .fill(
                     LinearGradient(
-                        colors: [Color.theme.neonGreen, Color(red: 0, green: 0.78, blue: 0.47)],
+                        colors: [Color.theme.primary, Color(red: 0.10, green: 0.30, blue: 0.85)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
                 .frame(width: size, height: size)
-                .neonGlow(Color.theme.neonGreen, radius: size * 0.12)
+                .softGlow(Color.theme.primary, radius: size * 0.12)
 
             HStack(spacing: size * 0.12) {
                 RoundedRectangle(cornerRadius: size * 0.03)
-                    .fill(Color(red: 0.03, green: 0.05, blue: 0.12))
+                    .fill(Color.theme.background)
                     .frame(width: size * 0.16, height: size * 0.48)
 
                 RoundedRectangle(cornerRadius: size * 0.03)
-                    .fill(Color(red: 0.03, green: 0.05, blue: 0.12))
+                    .fill(Color.theme.background)
                     .frame(width: size * 0.16, height: size * 0.48)
             }
         }
@@ -278,29 +274,29 @@ struct QuietSignalMark: View {
 
 // MARK: - Animated Button Style
 
-struct NeonButtonStyle: ButtonStyle {
+struct FilledButtonStyle: ButtonStyle {
     let color: Color
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
             .fontWeight(.bold)
-            .foregroundColor(.black)
+            .foregroundColor(.white)
             .padding(.horizontal, 32)
             .padding(.vertical, 16)
             .background(
                 Capsule()
                     .fill(color)
             )
-            .neonGlow(color, radius: configuration.isPressed ? 5 : 15)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .animation(.spring(response: 0.3), value: configuration.isPressed)
     }
 }
 
-extension ButtonStyle where Self == NeonButtonStyle {
-    static func neon(_ color: Color) -> NeonButtonStyle {
-        NeonButtonStyle(color: color)
+extension ButtonStyle where Self == FilledButtonStyle {
+    static func filled(_ color: Color) -> FilledButtonStyle {
+        FilledButtonStyle(color: color)
     }
 }
 

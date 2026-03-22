@@ -59,13 +59,13 @@ struct OnboardingView: View {
         // Simplified - use lower blur and drawingGroup for performance
         ZStack {
             Circle()
-                .fill(Color.theme.neonGreen.opacity(0.08))
+                .fill(Color.theme.success.opacity(0.08))
                 .frame(width: 300, height: 300)
                 .offset(x: 150, y: -200)
                 .blur(radius: 40)
 
             Circle()
-                .fill(Color.theme.neonPurple.opacity(0.05))
+                .fill(Color.theme.accent.opacity(0.05))
                 .frame(width: 300, height: 300)
                 .offset(x: -150, y: 300)
                 .blur(radius: 40)
@@ -97,9 +97,9 @@ struct OnboardingView: View {
         }
 
         if stepIndex < currentIndex {
-            return Color.theme.neonGreen
+            return Color.theme.success
         } else if stepIndex == currentIndex {
-            return Color.theme.neonGreen
+            return Color.theme.success
         } else {
             return Color.theme.textTertiary
         }
@@ -128,7 +128,7 @@ struct WelcomeStep: View {
                 // Outer glow rings
                 ForEach(0..<3) { i in
                     Circle()
-                        .stroke(Color.theme.neonGreen.opacity(0.1 - Double(i) * 0.03), lineWidth: 2)
+                        .stroke(Color.theme.success.opacity(0.1 - Double(i) * 0.03), lineWidth: 2)
                         .frame(width: 160 + CGFloat(i) * 40)
                 }
 
@@ -170,7 +170,7 @@ struct WelcomeStep: View {
                     Image(systemName: "arrow.right")
                 }
             }
-            .buttonStyle(.neon(Color.theme.neonGreen))
+            .buttonStyle(.filled(Color.theme.success))
             .opacity(buttonOpacity)
 
             Spacer()
@@ -244,7 +244,7 @@ struct HostDiscoveryStep: View {
                         isHostFieldFocused = false
                         viewModel.nextStep()
                     }
-                    .buttonStyle(.neon(Color.theme.neonGreen))
+                    .buttonStyle(.filled(Color.theme.success))
                 }
             }
             .padding(.horizontal, 24)
@@ -262,7 +262,7 @@ struct HostDiscoveryStep: View {
                 Button("Done") {
                     isHostFieldFocused = false
                 }
-                .foregroundColor(Color.theme.neonGreen)
+                .foregroundColor(Color.theme.success)
             }
         }
     }
@@ -271,7 +271,7 @@ struct HostDiscoveryStep: View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 40))
-                .foregroundColor(Color.theme.neonGreen)
+                .foregroundColor(Color.theme.success)
 
             Text("Found UniFi Controller")
                 .font(.headline)
@@ -280,7 +280,7 @@ struct HostDiscoveryStep: View {
             Text(host)
                 .font(.system(.title3, design: .monospaced))
                 .fontWeight(.bold)
-                .foregroundColor(Color.theme.neonGreen)
+                .foregroundColor(Color.theme.success)
         }
         .padding(24)
         .glassCard()
@@ -293,14 +293,14 @@ struct HostDiscoveryStep: View {
                 .foregroundColor(.white)
 
             TextField("192.168.1.1", text: $viewModel.host)
-                .textFieldStyle(NeonTextFieldStyle())
+                .textFieldStyle(TitanTextFieldStyle())
                 .keyboardType(.decimalPad)
                 .focused($isHostFieldFocused)
 
             if let error = viewModel.errorMessage {
                 Text(error)
                     .font(.caption)
-                    .foregroundColor(Color.theme.neonRed)
+                    .foregroundColor(Color.theme.danger)
             }
         }
         .padding(20)
@@ -322,7 +322,7 @@ struct HostDiscoveryStep: View {
                     isManualEntry = true
                 }
             }
-            .buttonStyle(.ghost(Color.theme.neonGreen))
+            .buttonStyle(.ghost(Color.theme.success))
 
             Button("Try Again") {
                 Task { @MainActor in
@@ -364,14 +364,14 @@ struct CredentialsStep: View {
                             // Icon with subtle glow ring
                             ZStack {
                                 Circle()
-                                    .stroke(Color.theme.neonPurple.opacity(0.2), lineWidth: 1)
+                                    .stroke(Color.theme.accent.opacity(0.2), lineWidth: 1)
                                     .frame(width: 72, height: 72)
 
                                 Image(systemName: "person.badge.key.fill")
                                     .font(.system(size: 28, weight: .medium))
                                     .foregroundStyle(
                                         LinearGradient(
-                                            colors: [Color.theme.neonPurple, Color.theme.neonBlue],
+                                            colors: [Color.theme.accent, Color.theme.primary],
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing
                                         )
@@ -412,7 +412,7 @@ struct CredentialsStep: View {
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10)
                                             .stroke(
-                                                focusedField == .username ? Color.theme.neonGreen.opacity(0.6) : Color.theme.glassStroke,
+                                                focusedField == .username ? Color.theme.success.opacity(0.6) : Color.theme.border,
                                                 lineWidth: focusedField == .username ? 1.5 : 1
                                             )
                                     )
@@ -440,7 +440,7 @@ struct CredentialsStep: View {
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10)
                                             .stroke(
-                                                focusedField == .password ? Color.theme.neonGreen.opacity(0.6) : Color.theme.glassStroke,
+                                                focusedField == .password ? Color.theme.success.opacity(0.6) : Color.theme.border,
                                                 lineWidth: focusedField == .password ? 1.5 : 1
                                             )
                                     )
@@ -455,7 +455,7 @@ struct CredentialsStep: View {
                                     Text(error)
                                         .font(.system(size: 12))
                                 }
-                                .foregroundColor(Color.theme.neonRed)
+                                .foregroundColor(Color.theme.danger)
                                 .padding(.top, 12)
                             }
                         }
@@ -464,7 +464,7 @@ struct CredentialsStep: View {
                         .cornerRadius(16)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.theme.glassStroke, lineWidth: 1)
+                                .stroke(Color.theme.border, lineWidth: 1)
                         )
 
                         // Info hint - minimal
@@ -502,12 +502,12 @@ struct CredentialsStep: View {
                                     }
                                 }
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.black)
+                                .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 16)
                                 .background(
                                     Capsule()
-                                        .fill(isFormValid ? Color.theme.neonGreen : Color.theme.neonGreen.opacity(0.3))
+                                        .fill(isFormValid ? Color.theme.success : Color.theme.success.opacity(0.3))
                                 )
                             }
                             .disabled(!isFormValid || viewModel.isLoading)
@@ -545,7 +545,7 @@ struct CredentialsStep: View {
                     focusedField = nil
                 }
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(Color.theme.neonGreen)
+                .foregroundColor(Color.theme.success)
             }
         }
     }
@@ -566,7 +566,7 @@ struct SiteIdStep: View {
                     VStack(spacing: 8) {
                         Image(systemName: "building.2.fill")
                             .font(.system(size: 32))
-                            .foregroundColor(Color.theme.neonPurple)
+                            .foregroundColor(Color.theme.accent)
 
                         Text("Select Site")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
@@ -598,17 +598,17 @@ struct SiteIdStep: View {
                                         Spacer()
                                         if viewModel.siteId == site.name {
                                             Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(Color.theme.neonGreen)
+                                                .foregroundColor(Color.theme.success)
                                         }
                                     }
                                     .padding(16)
                                     .background(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .fill(viewModel.siteId == site.name ? Color.theme.neonGreen.opacity(0.1) : Color.theme.surface)
+                                            .fill(viewModel.siteId == site.name ? Color.theme.success.opacity(0.1) : Color.theme.surface)
                                     )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .stroke(viewModel.siteId == site.name ? Color.theme.neonGreen.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
+                                            .stroke(viewModel.siteId == site.name ? Color.theme.success.opacity(0.5) : Color.theme.border, lineWidth: 1)
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -627,7 +627,7 @@ struct SiteIdStep: View {
                         // Manual entry
                         VStack(spacing: 16) {
                             TextField("default or UUID", text: $viewModel.siteId)
-                                .textFieldStyle(NeonTextFieldStyle())
+                                .textFieldStyle(TitanTextFieldStyle())
                                 .autocapitalization(.none)
                                 .autocorrectionDisabled()
                                 .focused($isSiteIdFieldFocused)
@@ -640,7 +640,7 @@ struct SiteIdStep: View {
                             if let error = viewModel.errorMessage {
                                 Text(error)
                                     .font(.caption)
-                                    .foregroundColor(Color.theme.neonRed)
+                                    .foregroundColor(Color.theme.danger)
                             }
 
                             if !viewModel.availableSites.isEmpty {
@@ -650,7 +650,7 @@ struct SiteIdStep: View {
                                     }
                                 }
                                 .font(.caption)
-                                .foregroundColor(Color.theme.neonGreen)
+                                .foregroundColor(Color.theme.success)
                             }
                         }
                         .padding(16)
@@ -676,7 +676,7 @@ struct SiteIdStep: View {
                         await viewModel.loadRules()
                     }
                 }
-                .buttonStyle(.neon(Color.theme.neonGreen))
+                .buttonStyle(.filled(Color.theme.success))
                 .disabled(viewModel.siteId.isEmpty)
                 .opacity(viewModel.siteId.isEmpty ? 0.5 : 1)
             }
@@ -690,7 +690,7 @@ struct SiteIdStep: View {
                 Button("Done") {
                     isSiteIdFieldFocused = false
                 }
-                .foregroundColor(Color.theme.neonGreen)
+                .foregroundColor(Color.theme.success)
             }
         }
     }
@@ -720,7 +720,7 @@ struct RuleSelectionStep: View {
             if viewModel.isLoading {
                 Spacer()
                 ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: Color.theme.neonGreen))
+                    .progressViewStyle(CircularProgressViewStyle(tint: Color.theme.success))
                     .scaleEffect(1.5)
                 Text("Loading rules...")
                     .font(.subheadline)
@@ -745,7 +745,7 @@ struct RuleSelectionStep: View {
                             Text("Select All")
                         }
                         .font(.subheadline)
-                        .foregroundColor(Color.theme.neonGreen)
+                        .foregroundColor(Color.theme.success)
                     }
                     Spacer()
                     Text("\(viewModel.selectedRuleIds.count) selected")
@@ -791,7 +791,7 @@ struct RuleSelectionStep: View {
                     }
                     completeSetup()
                 }
-                .buttonStyle(.neon(Color.theme.neonGreen))
+                .buttonStyle(.filled(Color.theme.success))
                 .disabled(viewModel.isLoading)
                 .opacity(viewModel.isLoading ? 0.5 : 1)
             }
@@ -812,7 +812,7 @@ struct RuleSelectionStep: View {
         VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 50))
-                .foregroundColor(Color.theme.neonRed)
+                .foregroundColor(Color.theme.danger)
 
             if let error = viewModel.errorMessage {
                 Text("API Error")
@@ -821,7 +821,7 @@ struct RuleSelectionStep: View {
 
                 Text(error)
                     .font(.subheadline)
-                    .foregroundColor(Color.theme.neonRed)
+                    .foregroundColor(Color.theme.danger)
                     .multilineTextAlignment(.center)
             } else {
                 Text("No Downtime Rules Found")
@@ -839,7 +839,7 @@ struct RuleSelectionStep: View {
                     await viewModel.loadRules()
                 }
             }
-            .buttonStyle(.ghost(Color.theme.neonGreen))
+            .buttonStyle(.ghost(Color.theme.success))
         }
         .padding(32)
         .glassCard()
@@ -867,7 +867,7 @@ struct FirewallRuleSelectionCard: View {
                 // Checkbox
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
-                    .foregroundColor(isSelected ? Color.theme.neonGreen : Color.theme.textTertiary)
+                    .foregroundColor(isSelected ? Color.theme.success : Color.theme.textTertiary)
 
                 // Rule info
                 VStack(alignment: .leading, spacing: 4) {
@@ -878,7 +878,7 @@ struct FirewallRuleSelectionCard: View {
                     HStack(spacing: 8) {
                         Text(rule.enabled ? "Active" : "Inactive")
                             .font(.caption)
-                            .foregroundColor(rule.enabled ? Color.theme.neonGreen : Color.theme.textSecondary)
+                            .foregroundColor(rule.enabled ? Color.theme.success : Color.theme.textSecondary)
 
                         Text("•")
                             .foregroundColor(Color.theme.textTertiary)
@@ -894,11 +894,11 @@ struct FirewallRuleSelectionCard: View {
             .padding(16)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? Color.theme.neonGreen.opacity(0.1) : Color.theme.surface)
+                    .fill(isSelected ? Color.theme.success.opacity(0.1) : Color.theme.surface)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color.theme.neonGreen.opacity(0.5) : Color.theme.glassStroke, lineWidth: 1)
+                    .stroke(isSelected ? Color.theme.success.opacity(0.5) : Color.theme.border, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -918,9 +918,9 @@ struct FirewallRuleSelectionCard: View {
     }
 }
 
-// MARK: - Neon Text Field Style
+// MARK: - Text Field Style
 
-struct NeonTextFieldStyle: TextFieldStyle {
+struct TitanTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .font(.system(.body, design: .monospaced))
@@ -930,7 +930,7 @@ struct NeonTextFieldStyle: TextFieldStyle {
             .cornerRadius(12)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.theme.glassStroke, lineWidth: 1)
+                    .stroke(Color.theme.border, lineWidth: 1)
             )
     }
 }

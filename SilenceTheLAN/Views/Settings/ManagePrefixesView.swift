@@ -48,7 +48,7 @@ struct ManagePrefixesView: View {
 
                                 if prefix != RulePrefixMatcher.defaultPrefixes.last {
                                     Divider()
-                                        .background(Color.theme.glassStroke)
+                                        .background(Color.theme.border)
                                 }
                             }
                         }
@@ -82,13 +82,13 @@ struct ManagePrefixesView: View {
                                     } label: {
                                         Image(systemName: "minus.circle.fill")
                                             .font(.title2)
-                                            .foregroundColor(Color.theme.neonRed.opacity(0.8))
+                                            .foregroundColor(Color.theme.danger.opacity(0.8))
                                     }
                                 }
                                 .padding(16)
 
                                 Divider()
-                                    .background(Color.theme.glassStroke)
+                                    .background(Color.theme.border)
                             }
 
                             // Add new prefix field
@@ -109,7 +109,7 @@ struct ManagePrefixesView: View {
                                     } label: {
                                         Image(systemName: "checkmark.circle.fill")
                                             .font(.title2)
-                                            .foregroundColor(Color.theme.neonGreen)
+                                            .foregroundColor(Color.theme.success)
                                     }
                                     .disabled(newPrefix.trimmingCharacters(in: .whitespaces).isEmpty)
 
@@ -127,7 +127,7 @@ struct ManagePrefixesView: View {
                                 .padding(16)
 
                                 Divider()
-                                    .background(Color.theme.glassStroke)
+                                    .background(Color.theme.border)
                             }
 
                             // Add button
@@ -141,11 +141,11 @@ struct ManagePrefixesView: View {
                                     HStack(spacing: 14) {
                                         Image(systemName: "plus.circle.fill")
                                             .font(.title2)
-                                            .foregroundColor(Color.theme.neonGreen)
+                                            .foregroundColor(Color.theme.success)
 
                                         Text("Add Custom Prefix")
                                             .font(.body)
-                                            .foregroundColor(Color.theme.neonGreen)
+                                            .foregroundColor(Color.theme.success)
 
                                         Spacer()
                                     }
@@ -184,7 +184,7 @@ struct ManagePrefixesView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "info.circle.fill")
-                    .foregroundColor(Color.theme.neonBlue)
+                    .foregroundColor(Color.theme.primary)
                 Text("How Prefixes Work")
                     .font(.headline)
                     .foregroundColor(.white)
@@ -200,7 +200,7 @@ struct ManagePrefixesView: View {
         .cornerRadius(16)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.theme.glassStroke, lineWidth: 1)
+                .stroke(Color.theme.border, lineWidth: 1)
         )
     }
 

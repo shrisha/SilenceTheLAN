@@ -34,7 +34,7 @@ struct QuietSignalGlyph: View {
         ZStack {
             QuietSignalArc(startAngle: .degrees(205), endAngle: .degrees(335))
                 .stroke(
-                    monochrome ? Color.white.opacity(0.35) : Color.white.opacity(0.25),
+                    monochrome ? Color.white.opacity(0.35) : Color(red: 0.706, green: 0.773, blue: 1.0).opacity(0.3),
                     style: StrokeStyle(lineWidth: size * 0.12, lineCap: .round)
                 )
                 .frame(width: size * 1.2, height: size * 1.2)
@@ -47,8 +47,8 @@ struct QuietSignalGlyph: View {
                     : AnyShapeStyle(
                         LinearGradient(
                             colors: [
-                                Color(red: 0.09, green: 1.00, blue: 0.60),
-                                Color(red: 0.00, green: 0.80, blue: 0.47)
+                                Color(red: 0.145, green: 0.388, blue: 0.922),  // #2563eb
+                                Color(red: 0.10, green: 0.30, blue: 0.85)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -57,17 +57,17 @@ struct QuietSignalGlyph: View {
                 )
                 .frame(width: size, height: size)
                 .shadow(
-                    color: monochrome ? .clear : Color(red: 0.09, green: 1.00, blue: 0.60).opacity(0.48),
+                    color: monochrome ? .clear : Color(red: 0.145, green: 0.388, blue: 0.922).opacity(0.4),
                     radius: size * 0.12
                 )
 
             HStack(spacing: size * 0.12) {
                 RoundedRectangle(cornerRadius: size * 0.03)
-                    .fill(monochrome ? Color.black : Color(red: 0.03, green: 0.05, blue: 0.12))
+                    .fill(monochrome ? Color.black : Color(red: 0.043, green: 0.075, blue: 0.149))
                     .frame(width: size * 0.16, height: size * 0.48)
 
                 RoundedRectangle(cornerRadius: size * 0.03)
-                    .fill(monochrome ? Color.black : Color(red: 0.03, green: 0.05, blue: 0.12))
+                    .fill(monochrome ? Color.black : Color(red: 0.043, green: 0.075, blue: 0.149))
                     .frame(width: size * 0.16, height: size * 0.48)
             }
         }
@@ -83,14 +83,14 @@ struct AppIconMain: View {
 
             ZStack {
                 Rectangle()
-                    .fill(Color(red: 0.00, green: 0.01, blue: 0.07))
+                    .fill(Color(red: 0.043, green: 0.075, blue: 0.149))  // #0b1326
 
                 RoundedRectangle(cornerRadius: size * 0.22)
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color(red: 0.03, green: 0.05, blue: 0.13),
-                                Color(red: 0.00, green: 0.01, blue: 0.07)
+                                Color(red: 0.075, green: 0.106, blue: 0.180),  // #131b2e
+                                Color(red: 0.043, green: 0.075, blue: 0.149)   // #0b1326
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -100,7 +100,7 @@ struct AppIconMain: View {
                 Circle()
                     .fill(
                         RadialGradient(
-                            colors: [Color(red: 0.0, green: 1.0, blue: 0.53).opacity(0.2), .clear],
+                            colors: [Color(red: 0.145, green: 0.388, blue: 0.922).opacity(0.2), .clear],
                             center: .center,
                             startRadius: 0,
                             endRadius: size * 0.5

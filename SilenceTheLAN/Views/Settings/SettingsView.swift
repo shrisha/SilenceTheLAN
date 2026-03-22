@@ -27,18 +27,18 @@ struct SettingsView: View {
                             VStack(spacing: 0) {
                                 SettingsRow(
                                     icon: "wifi.router",
-                                    iconColor: Color.theme.neonGreen,
+                                    iconColor: Color.theme.success,
                                     title: "UniFi Controller",
                                     value: appState.networkMonitor.isReachable ? "Connected" : "Offline",
-                                    valueColor: appState.networkMonitor.isReachable ? Color.theme.neonGreen : Color.theme.neonRed
+                                    valueColor: appState.networkMonitor.isReachable ? Color.theme.success : Color.theme.danger
                                 )
 
                                 Divider()
-                                    .background(Color.theme.glassStroke)
+                                    .background(Color.theme.border)
 
                                 SettingsRow(
                                     icon: "server.rack",
-                                    iconColor: Color.theme.neonBlue,
+                                    iconColor: Color.theme.primary,
                                     title: "IP Address",
                                     value: unifiHost
                                 )
@@ -50,13 +50,13 @@ struct SettingsView: View {
                             VStack(spacing: 0) {
                                 SettingsRow(
                                     icon: "person.circle",
-                                    iconColor: Color.theme.neonPurple,
+                                    iconColor: Color.theme.accent,
                                     title: "Logged in as",
                                     value: loggedInUsername ?? "Unknown"
                                 )
 
                                 Divider()
-                                    .background(Color.theme.glassStroke)
+                                    .background(Color.theme.border)
 
                                 Button {
                                     showLogoutConfirmation = true
@@ -79,7 +79,7 @@ struct SettingsView: View {
                                 } label: {
                                     SettingsRow(
                                         icon: "list.bullet.rectangle",
-                                        iconColor: Color.theme.neonGreen,
+                                        iconColor: Color.theme.success,
                                         title: "Manage Rules",
                                         value: "\(appState.rules.count)",
                                         showChevron: true
@@ -87,7 +87,7 @@ struct SettingsView: View {
                                 }
 
                                 Divider()
-                                    .background(Color.theme.glassStroke)
+                                    .background(Color.theme.border)
 
                                 NavigationLink {
                                     ManagePrefixesView()
@@ -95,7 +95,7 @@ struct SettingsView: View {
                                 } label: {
                                     SettingsRow(
                                         icon: "tag",
-                                        iconColor: Color.theme.neonPurple,
+                                        iconColor: Color.theme.accent,
                                         title: "Rule Prefixes",
                                         value: "\(RulePrefixMatcher.shared.prefixes.count)",
                                         showChevron: true
@@ -124,7 +124,7 @@ struct SettingsView: View {
                                         .font(.body)
                                     Spacer()
                                 }
-                                .foregroundColor(Color.theme.neonRed)
+                                .foregroundColor(Color.theme.danger)
                                 .padding(16)
                             }
                         }
@@ -145,7 +145,7 @@ struct SettingsView: View {
                     Button("Done") {
                         dismiss()
                     }
-                    .foregroundColor(Color.theme.neonGreen)
+                    .foregroundColor(Color.theme.success)
                     .fontWeight(.semibold)
                 }
             }
@@ -190,7 +190,7 @@ struct SettingsSection<Content: View>: View {
                 .cornerRadius(16)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.theme.glassStroke, lineWidth: 1)
+                        .stroke(Color.theme.border, lineWidth: 1)
                 )
         }
     }
