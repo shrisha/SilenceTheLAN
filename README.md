@@ -54,8 +54,11 @@ All actions are logged in the UniFi rule description for transparency.
 
 - **iOS 17.0+**
 - **UniFi Dream Machine** (UDM, UDM Pro, UDM SE) or **Cloud Gateway** (UCG Max, UCG Ultra)
+- **UniFi Network 8.x+** with **zone-based firewall policies** enabled (see note below)
 - iPhone on the **same local network** as your UniFi controller
 - A **local UniFi admin account** (not cloud/SSO - see setup below)
+
+> **Important:** This app uses the zone-based Firewall Policies API (introduced in UniFi Network 8.x). If your firewall rules show actions like "Drop/Accept" with types like "Internet In/Out/Local", you're on the legacy firewall system. Go to **Settings > Firewall & Security** and look for a prompt to upgrade to zone-based management. Legacy firewall rules (Drop/Accept/Reject) are not supported.
 
 ## Quick Start
 
@@ -116,6 +119,7 @@ Build and run on your device or simulator (depending on your Mac/Safari/Network 
 
 ## Limitations
 
+- **Zone-based policies only** - Legacy firewall rules (pre-8.x with Drop/Accept actions) are not supported. Upgrade to zone-based management in UniFi settings.
 - **Local network only** - No remote access (your UniFi controller isn't exposed to the internet, and neither is this app)
 - **Local accounts only** - Cloud/SSO with 2FA not supported
 - **iOS only** - No Android version (PRs welcome!)

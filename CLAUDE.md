@@ -11,8 +11,9 @@ SilenceTheLAN allows parents to quickly enable/disable pre-configured "downtime"
 Before using this app, the user must have:
 
 1. **Locally deployed UniFi system** - The iOS device must be on the same network as the UniFi controller (UDM Pro, UDM SE, UCG Max, etc.)
-2. **API Key from UniFi** - Created in the UniFi web interface under `Settings > Integrations > Create New API Key`
-3. **Pre-configured ACL rules** - Firewall ACL rules with names beginning with "downtime" (case-insensitive) that the app will control
+2. **UniFi Network 8.x+** with **zone-based firewall policies** enabled - The app uses the v2 Firewall Policies API (`/v2/api/site/{site}/firewall-policies`). Legacy firewall rules (pre-8.x, with Drop/Accept/Reject actions and Internet In/Out/Local types) are **not supported**. Users on older firmware must upgrade and enable zone-based management under Settings > Firewall & Security.
+3. **API Key from UniFi** - Created in the UniFi web interface under `Settings > Integrations > Create New API Key`
+4. **Pre-configured zone-based firewall policies** - Firewall policies with names beginning with "downtime" (case-insensitive) that the app will control. These must be zone-based policies (Block/Allow/Reject actions with Source/Destination Zones), not legacy firewall rules.
 
 ## Technology Stack
 
@@ -411,9 +412,9 @@ SilenceTheLAN/
    - Firewall may be blocking API access
 
 5. **Rules Not Appearing**
-   - Ensure ACL rules are named with "downtime" prefix
-   - Check pagination - may need to fetch multiple pages if >25 rules
-   - Verify API response `data` array contains rules
+   - **Most common cause:** User is on legacy firewall rules (pre-8.x) instead of zone-based policies. Legacy rules show actions as "Drop/Accept/Reject" with types like "Internet In/Out/Local". The app only queries the zone-based Firewall Policies API (`/v2/api/site/{site}/firewall-policies`). User must upgrade to zone-based management under Settings > Firewall & Security.
+   - Ensure firewall policies are named with a configured prefix (default: "Downtime-" or "STL-")
+   - Verify rules are zone-based policies (Block/Allow/Reject with Source/Destination Zones), not legacy firewall rules
 
 6. **Invalid siteId**
    - siteId must be a valid UUID
