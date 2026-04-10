@@ -23,6 +23,7 @@ struct RuleGroup: Identifiable {
 
 struct DashboardView: View {
     @EnvironmentObject var appState: AppState
+    var allowsAutoRefresh = true
     @State private var showSettings = false
     @State private var showManageRules = false
     @State private var expandedGroups: Set<String> = []
@@ -134,7 +135,7 @@ struct DashboardView: View {
             }
 
             // Perform initial load if not done yet
-            if !hasPerformedInitialLoad {
+            if allowsAutoRefresh && !hasPerformedInitialLoad {
                 hasPerformedInitialLoad = true
                 Task { @MainActor in
                     // Small delay to let UI render

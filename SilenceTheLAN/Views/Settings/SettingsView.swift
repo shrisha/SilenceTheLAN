@@ -3,11 +3,13 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    let showsDoneButton: Bool
+    let previewUsername: String?
     @State private var showResetConfirmation = false
     @State private var showLogoutConfirmation = false
 
     private var loggedInUsername: String? {
-        try? KeychainService.shared.getCredentials().username
+        previewUsername ?? (try? KeychainService.shared.getCredentials().username)
     }
 
     private var unifiHost: String {
@@ -108,7 +110,7 @@ struct SettingsView: View {
                         SettingsSection(title: "APP") {
                             SettingsRow(
                                 title: "Version",
-                                value: "1.0.0"
+                                value: AppVersion.displayString
                             )
                         }
 
@@ -141,12 +143,14 @@ struct SettingsView: View {
             .toolbarBackground(Color.theme.background, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
+                if showsDoneButton {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                        .foregroundColor(Color.theme.success)
+                        .fontWeight(.semibold)
                     }
-                    .foregroundColor(Color.theme.success)
-                    .fontWeight(.semibold)
                 }
             }
             .alert("Reset App?", isPresented: $showResetConfirmation) {
@@ -168,6 +172,13 @@ struct SettingsView: View {
                 Text("You'll need to enter your credentials again to use the app.")
             }
         }
+    }
+}
+
+extension SettingsView {
+    init(showsDoneButton: Bool = true, previewUsername: String? = nil) {
+        self.showsDoneButton = showsDoneButton
+        self.previewUsername = previewUsername
     }
 }
 

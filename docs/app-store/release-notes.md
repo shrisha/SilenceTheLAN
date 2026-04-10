@@ -1,8 +1,7 @@
 # What's New
 
-Initial App Store release of SilenceTheLAN.
+This update refreshes SilenceTheLAN with the current visual design and app icon.
 
-- One-tap internet block/allow controls for UniFi firewall rules
-- Smart temporary access extensions with auto-restore
-- Rule grouping by person and activity
-- On-device workflow for local network control
+- Updated app icon and in-app color palette
+- Refreshed onboarding, dashboard, and settings visuals
+- Improved App Store screenshots to match the current experience

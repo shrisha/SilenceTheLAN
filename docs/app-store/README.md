@@ -3,10 +3,12 @@
 ## Regenerate everything
 
 ```bash
+./Scripts/CaptureAppStoreScreenshots.sh
 ./Scripts/PrepareAppStoreAssets.sh
 ```
 
-This command regenerates:
+These commands regenerate:
+- Raw current-theme screenshots from the app itself
 - Quiet-signal app icon files from source
 - iPhone screenshot sets for 6.9-inch and 6.5-inch uploads
 

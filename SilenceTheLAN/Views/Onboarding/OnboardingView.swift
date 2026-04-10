@@ -196,6 +196,7 @@ struct WelcomeStep: View {
 
 struct HostDiscoveryStep: View {
     @ObservedObject var viewModel: SetupViewModel
+    var allowsAutoDiscovery = true
     @State private var isManualEntry = false
     @FocusState private var isHostFieldFocused: Bool
 
@@ -252,6 +253,7 @@ struct HostDiscoveryStep: View {
             .background(Color.theme.background)
         }
         .onAppear {
+            guard allowsAutoDiscovery else { return }
             Task { @MainActor in
                 await viewModel.discoverUniFi()
             }
