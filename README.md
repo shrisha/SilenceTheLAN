@@ -5,9 +5,19 @@
 A simple iOS app for parents with UniFi networks. Set up your firewall rules once in UniFi, then use this app to toggle them on/off without touching the UniFi interface.
 
 <p align="center">
+  <img src="docs/app-store/icons/AppIcon-1024.png" width="96" alt="SilenceTheLAN App Icon" />
+</p>
+
+<p align="center">
   <img src="docs/screenshots/welcome.png" width="250" alt="Welcome" />
   <img src="docs/screenshots/dashboard.png" width="250" alt="Dashboard" />
   <img src="docs/screenshots/settings.png" width="250" alt="Settings" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/discovery.png" width="200" alt="Discovery" />
+  <img src="docs/screenshots/login.png" width="200" alt="Login" />
+  <img src="docs/screenshots/extension.png" width="200" alt="Time Extension" />
 </p>
 
 ## Why This Exists
@@ -87,16 +97,11 @@ In UniFi Console → Settings → Admins & Users:
 
 ### 3. Install and connect
 
-1. Build from source or install via TestFlight (coming soon)
+1. Install from the App Store, TestFlight, or build from source
 2. App auto-discovers your UniFi controller
 3. Log in with your local admin account
 4. Select which rules to manage
 5. Done!
-
-<p align="center">
-  <img src="docs/screenshots/discovery.png" width="200" alt="Discovery" />
-  <img src="docs/screenshots/login.png" width="200" alt="Login" />
-</p>
 
 ## How It Works
 
